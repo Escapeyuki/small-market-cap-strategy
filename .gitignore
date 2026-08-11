@@ -1,0 +1,33 @@
+# ⚠️ data/ 是 705 MB 的 Parquet 缓存，不进 git。
+#
+# 但请注意：**它不是普通的可再生缓存。** rqdatac 是有硬期限的试用授权，到期后
+# scripts/01_fetch.py 再也跑不出这份数据。缓存里含 2000 年起的后复权价、
+# 2007 年起的选股字段，以及已退市股票的完整历史（无幸存者偏差）。
+# ⇒ **请在 git 之外单独备份 data/**，git 只是不适合装它，不是它不重要。
+data/
+
+# 抓取过程的临时文件（data.write 先写 .tmp 再改名，中途被杀会留下）
+*.tmp
+
+# 输出：结论留档，逐日序列不留。
+# nav_*.csv 是几千行的日度净值，属于可由 data/ 在 20 秒内离线重算的中间产物；
+# 而汇总表很小，又是 data/ 不进 git 之后仓库里唯一的结果证据，所以保留。
+output/*
+!output/table1_*.csv
+!output/sensitivity.csv
+!output/bands_annual_return.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# 编辑器 / 系统
+.claude/
+.DS_Store
+
+# 刻意**不**忽略的两样东西：
+#   harvest.log —— 20 KB，记录了每个块的抓取时间、行数与额度消耗。对于一份
+#                  21 天后就再也拉不出来的数据集，这是它唯一的来源凭证，值得留。
+#   德邦研报 PDF —— 1.4 MB，是整个复现的规格书。
+CLAUDE.md

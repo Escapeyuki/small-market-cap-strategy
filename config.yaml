@@ -1,0 +1,52 @@
+# 小市值策略复现 — 全部可调参数
+# 口径歧义处的先验取值见 grill.md「Q14 纪律」；跑之前固定，不得为凑 43.1% 事后调参。
+
+periods:
+  # 研报主区间（表 1、图 7、图 30、表 3）
+  report_start: 2012-12-03
+  report_end:   2022-03-31
+  # 股价时序分位数基线（研报 3.3 节明确规定）
+  price_percentile_base: 2000-01-03
+  # 十分组回测（图 6 注）
+  decile_start: 2007-01-01
+  decile_end:   2021-12-31
+  # 容量测试（表 2 注）
+  capacity_start: 2019-01-07
+  # 样本外延长
+  extension_end: 2026-08-08
+
+universe:
+  min_listed_days: 20        # 剔除上市不满 20 个交易日的次新股
+  exclude_st: true
+  # 北交所：rqdatac 的 CS universe 中不存在，此过滤自动满足，无需实现
+
+portfolio:
+  size: 100                  # 小市值 100
+  bands: [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]   # 表 3
+  n_deciles: 10              # 图 6
+
+backtest:
+  benchmark: 000852.XSHG     # 中证 1000
+  rf: 0.02                   # 夏普口径 rf=2%
+  trading_days_per_year: 252
+  # 「双边千分之三」→ 往返合计 0.3%，单边 0.15%
+  cost_per_side: 0.0015
+  frequencies: [monthly, weekly, daily]
+  # Q4：两种成交模式并行，量化差异
+  #   report_close = T 日收盘排名 + T 日收盘成交（研报口径，轻度未来函数）
+  #   next_open    = T 日收盘排名 + T+1 开盘成交（正确口径）
+  execution_modes: [report_close, next_open]
+
+enhance:                     # 图 31
+  take_profit: 0.13
+  stop_loss: 0.26
+
+capacity:                    # 表 2
+  initial_capital: [1.0e8, 5.0e8, 1.0e9, 2.0e9, 5.0e9]
+  max_participation: 0.05    # 每票每日最多成交当日成交额的 5%
+
+data:
+  root: data
+  quota_limit_bytes: 1073741824      # 1 GB
+  quota_floor_bytes: 100000000       # 剩余低于 100 MB 即中止抓取
+  chunk_years: 2                     # 单次调用开销约 250 KB → 少量大调用

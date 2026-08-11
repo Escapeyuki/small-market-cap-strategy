@@ -1,0 +1,190 @@
+/Users/escape/miniconda3/envs/rq/lib/python3.11/site-packages/rqdatac/client.py:263: UserWarning: Your account will be expired after  21 days. Please call us at 0755-22676337 to upgrade or purchase or renew your contract.
+  warnings.warn("Your account will be expired after  {} days. "
+quota: 3 MB used, 1071 MB left
+
+[1/9] metadata
+[2/9] post-adjusted open+close — report window
+  price_post                   20121203_20131231  rows=  640,522    3.9s  cum_quota=    3.5MB  -> data/price_post/20121203_20131231.parquet
+  price_post                   20140101_20151231  rows=1,287,201    4.7s  cum_quota=   11.4MB  -> data/price_post/20140101_20151231.parquet
+  price_post                   20160101_20171231  rows=1,505,161    6.5s  cum_quota=   31.6MB  -> data/price_post/20160101_20171231.parquet
+  price_post                   20180101_20191231  rows=1,748,290    7.5s  cum_quota=   44.1MB  -> data/price_post/20180101_20191231.parquet
+  price_post                   20200101_20211231  rows=2,014,842    9.9s  cum_quota=   59.0MB  -> data/price_post/20200101_20211231.parquet
+  price_post                   20220101_20220331  rows=  269,204    3.3s  cum_quota=   59.0MB  -> data/price_post/20220101_20220331.parquet
+[3/9] market_cap — report window
+  market_cap                   20121203_20131231  rows=  640,522    1.2s  cum_quota=   61.3MB  -> data/market_cap/20121203_20131231.parquet
+  market_cap                   20140101_20151231  rows=1,287,201    3.3s  cum_quota=   61.3MB  -> data/market_cap/20140101_20151231.parquet
+  market_cap                   20160101_20171231  rows=1,505,161   13.8s  cum_quota=   76.3MB  -> data/market_cap/20160101_20171231.parquet
+  market_cap                   20180101_20191231  rows=1,748,290    2.5s  cum_quota=   76.3MB  -> data/market_cap/20180101_20191231.parquet
+  market_cap                   20200101_20211231  rows=2,014,842    4.2s  cum_quota=   93.0MB  -> data/market_cap/20200101_20211231.parquet
+  market_cap                   20220101_20220331  rows=  269,204    3.2s  cum_quota=   93.0MB  -> data/market_cap/20220101_20220331.parquet
+[4/9] raw close + limit_up + volume + turnover — report window
+  price_raw                    20121203_20131231  rows=  640,522    1.9s  cum_quota=  106.1MB  -> data/price_raw/20121203_20131231.parquet
+  price_raw                    20140101_20151231  rows=1,287,201    2.9s  cum_quota=  122.9MB  -> data/price_raw/20140101_20151231.parquet
+  price_raw                    20160101_20171231  rows=1,505,161    3.3s  cum_quota=  158.0MB  -> data/price_raw/20160101_20171231.parquet
+  price_raw                    20180101_20191231  rows=1,748,290    3.9s  cum_quota=  174.7MB  -> data/price_raw/20180101_20191231.parquet
+  price_raw                    20200101_20211231  rows=2,014,842    3.9s  cum_quota=  227.4MB  -> data/price_raw/20200101_20211231.parquet
+  price_raw                    20220101_20220331  rows=  269,204    1.2s  cum_quota=  227.4MB  -> data/price_raw/20220101_20220331.parquet
+[5/9] ST / suspension flags
+  is_st_stock                  20121203_20131231  rows=   19,826    0.3s  cum_quota=  227.4MB  -> data/st/20121203_20131231.parquet
+  is_st_stock                  20140101_20151231  rows=   24,704    0.3s  cum_quota=  227.4MB  -> data/st/20140101_20151231.parquet
+  is_st_stock                  20160101_20171231  rows=   33,296    0.4s  cum_quota=  227.4MB  -> data/st/20160101_20171231.parquet
+  is_st_stock                  20180101_20191231  rows=   50,666    0.5s  cum_quota=  227.4MB  -> data/st/20180101_20191231.parquet
+  is_st_stock                  20200101_20211231  rows=   94,324    0.9s  cum_quota=  227.4MB  -> data/st/20200101_20211231.parquet
+  is_st_stock                  20220101_20231231  rows=   71,039    0.7s  cum_quota=  227.4MB  -> data/st/20220101_20231231.parquet
+  is_st_stock                  20240101_20251231  rows=   71,773    0.8s  cum_quota=  233.3MB  -> data/st/20240101_20251231.parquet
+  is_st_stock                  20260101_20260808  rows=   29,151    0.3s  cum_quota=  233.3MB  -> data/st/20260101_20260808.parquet
+  is_suspended                 20121203_20131231  rows=   25,009    0.6s  cum_quota=  233.3MB  -> data/suspended/20121203_20131231.parquet
+  is_suspended                 20140101_20151231  rows=  145,727    2.0s  cum_quota=  233.3MB  -> data/suspended/20140101_20151231.parquet
+  is_suspended                 20160101_20171231  rows=  118,631    1.7s  cum_quota=  233.3MB  -> data/suspended/20160101_20171231.parquet
+  is_suspended                 20180101_20191231  rows=   45,343    0.8s  cum_quota=  233.4MB  -> data/suspended/20180101_20191231.parquet
+  is_suspended                 20200101_20211231  rows=    9,531    0.3s  cum_quota=  233.4MB  -> data/suspended/20200101_20211231.parquet
+  is_suspended                 20220101_20231231  rows=    5,407    0.2s  cum_quota=  233.4MB  -> data/suspended/20220101_20231231.parquet
+  is_suspended                 20240101_20251231  rows=    6,408    0.2s  cum_quota=  233.4MB  -> data/suspended/20240101_20251231.parquet
+  is_suspended                 20260101_20260808  rows=    1,761    0.3s  cum_quota=  233.4MB  -> data/suspended/20260101_20260808.parquet
+[6/9] back-history post-adjusted close (price percentile baseline)
+/Users/escape/miniconda3/envs/rq/lib/python3.11/site-packages/rqdatac/services/get_price.py:293: UserWarning: start_date is earlier than 2000-01-04, adjusted to 2000-01-04
+  warnings.warn("start_date is earlier than 2000-01-04, adjusted to 2000-01-04")
+  price_post_back              20000103_20011231  rows=  501,046    1.2s  cum_quota=  233.4MB  -> data/price_post_back/20000103_20011231.parquet
+  price_post_back              20020101_20031231  rows=  574,352    1.5s  cum_quota=  233.4MB  -> data/price_post_back/20020101_20031231.parquet
+  price_post_back              20040101_20051231  rows=  649,651    1.5s  cum_quota=  238.4MB  -> data/price_post_back/20040101_20051231.parquet
+  price_post_back              20060101_20071231  rows=  683,995    1.8s  cum_quota=  238.4MB  -> data/price_post_back/20060101_20071231.parquet
+  price_post_back              20080101_20091231  rows=  783,411    2.2s  cum_quota=  238.4MB  -> data/price_post_back/20080101_20091231.parquet
+  price_post_back              20100101_20111231  rows=  990,610    2.9s  cum_quota=  247.8MB  -> data/price_post_back/20100101_20111231.parquet
+  price_post_back              20120101_20121202  rows=  535,677    2.1s  cum_quota=  247.8MB  -> data/price_post_back/20120101_20121202.parquet
+[7/9] extension to today
+  price_post_ext               20220401_20231231  rows=2,092,409   11.8s  cum_quota=  270.6MB  -> data/price_post_ext/20220401_20231231.parquet
+  price_post_ext               20240101_20251231  rows=2,487,986   14.3s  cum_quota=  289.1MB  -> data/price_post_ext/20240101_20251231.parquet
+  price_post_ext               20260101_20260808  rows=  748,368    8.4s  cum_quota=  289.1MB  -> data/price_post_ext/20260101_20260808.parquet
+  market_cap_ext               20220401_20231231  rows=2,092,408    4.3s  cum_quota=  295.5MB  -> data/market_cap_ext/20220401_20231231.parquet
+  market_cap_ext               20240101_20251231  rows=2,487,986    2.9s  cum_quota=  316.9MB  -> data/market_cap_ext/20240101_20251231.parquet
+  market_cap_ext               20260101_20260808  rows=  748,368    2.8s  cum_quota=  316.9MB  -> data/market_cap_ext/20260101_20260808.parquet
+  price_raw_ext                20220401_20231231  rows=2,092,409    3.3s  cum_quota=  359.8MB  -> data/price_raw_ext/20220401_20231231.parquet
+  price_raw_ext                20240101_20251231  rows=2,487,986    3.3s  cum_quota=  393.4MB  -> data/price_raw_ext/20240101_20251231.parquet
+  price_raw_ext                20260101_20260808  rows=  748,368    1.4s  cum_quota=  423.9MB  -> data/price_raw_ext/20260101_20260808.parquet
+[8/9] index prices + components
+/Users/escape/miniconda3/envs/rq/lib/python3.11/site-packages/rqdatac/services/get_price.py:293: UserWarning: start_date is earlier than 2000-01-04, adjusted to 2000-01-04
+  warnings.warn("start_date is earlier than 2000-01-04, adjusted to 2000-01-04")
+  index_price                  20000103_20011231  rows=        0    0.1s  cum_quota=  423.9MB  -> data/index_price/20000103_20011231.parquet
+  index_price                  20020101_20031231  rows=      478    0.1s  cum_quota=  423.9MB  -> data/index_price/20020101_20031231.parquet
+  index_price                  20040101_20051231  rows=      971    0.0s  cum_quota=  423.9MB  -> data/index_price/20040101_20051231.parquet
+  index_price                  20060101_20071231  rows=    1,449    0.0s  cum_quota=  423.9MB  -> data/index_price/20060101_20071231.parquet
+  index_price                  20080101_20091231  rows=    1,470    0.0s  cum_quota=  423.9MB  -> data/index_price/20080101_20091231.parquet
+  index_price                  20100101_20111231  rows=    1,458    0.0s  cum_quota=  423.9MB  -> data/index_price/20100101_20111231.parquet
+  index_price                  20120101_20131231  rows=    1,443    0.0s  cum_quota=  423.9MB  -> data/index_price/20120101_20131231.parquet
+  index_price                  20140101_20151231  rows=    1,467    0.0s  cum_quota=  423.9MB  -> data/index_price/20140101_20151231.parquet
+  index_price                  20160101_20171231  rows=    1,464    0.0s  cum_quota=  423.9MB  -> data/index_price/20160101_20171231.parquet
+  index_price                  20180101_20191231  rows=    1,461    0.0s  cum_quota=  423.9MB  -> data/index_price/20180101_20191231.parquet
+  index_price                  20200101_20211231  rows=    1,458    0.1s  cum_quota=  423.9MB  -> data/index_price/20200101_20211231.parquet
+  index_price                  20220101_20231231  rows=    1,452    0.1s  cum_quota=  423.9MB  -> data/index_price/20220101_20231231.parquet
+  index_price                  20240101_20251231  rows=    1,455    0.1s  cum_quota=  423.9MB  -> data/index_price/20240101_20251231.parquet
+  index_price                  20260101_20260808  rows=      432    0.1s  cum_quota=  423.9MB  -> data/index_price/20260101_20260808.parquet
+[9/9] industry snapshots
+
+done. quota used: 424 MB
+
+=== 补齐抓取缺口 (index_components / pb / turnover) 2026-08-10 23:05 ===
+/Users/escape/miniconda3/envs/rq/lib/python3.11/site-packages/rqdatac/client.py:263: UserWarning: Your account will be expired after  21 days. Please call us at 0755-22676337 to upgrade or purchase or renew your contract.
+  warnings.warn("Your account will be expired after  {} days. "
+quota: 430 MB used, 643 MB left
+
+[1/12] metadata
+[2/12] post-adjusted open+close — report window
+  price_post                   6 block(s) already cached, skipped
+[3/12] market_cap — report window
+  market_cap                   6 block(s) already cached, skipped
+[4/12] raw close + limit_up + volume + turnover — report window
+  price_raw                    6 block(s) already cached, skipped
+[5/12] ST / suspension flags
+  is_st_stock                  8 block(s) already cached, skipped
+  is_suspended                 8 block(s) already cached, skipped
+[6/12] back-history post-adjusted close (price percentile baseline)
+  price_post_back              7 block(s) already cached, skipped
+[7/12] extension to today
+  price_post_ext               3 block(s) already cached, skipped
+  market_cap_ext               3 block(s) already cached, skipped
+  price_raw_ext                3 block(s) already cached, skipped
+[8/12] index prices
+  index_price                  14 block(s) already cached, skipped
+[9/12] index components — 图19 PB, 图22-24 市值中位数与换手率
+  index_components             20121203_20131231  rows=  207,200    1.3s  cum_quota=  432.8MB  -> data/index_components/20121203_20131231.parquet
+  index_components             20140101_20151231  rows=  689,200    0.4s  cum_quota=  432.8MB  -> data/index_components/20140101_20151231.parquet
+  index_components             20160101_20171231  rows=  878,400    0.5s  cum_quota=  432.8MB  -> data/index_components/20160101_20171231.parquet
+  index_components             20180101_20191231  rows=  876,600    0.5s  cum_quota=  432.8MB  -> data/index_components/20180101_20191231.parquet
+  index_components             20200101_20211231  rows=  874,800    0.5s  cum_quota=  432.8MB  -> data/index_components/20200101_20211231.parquet
+  index_components             20220101_20231231  rows=  871,200    0.5s  cum_quota=  432.8MB  -> data/index_components/20220101_20231231.parquet
+  index_components             20240101_20251231  rows=  873,000    0.5s  cum_quota=  432.8MB  -> data/index_components/20240101_20251231.parquet
+  index_components             20260101_20260808  rows=  259,200    0.3s  cum_quota=  432.8MB  -> data/index_components/20260101_20260808.parquet
+[10/12] pb_ratio_lyr — 图19, 整体法 PB = sum(market_cap) / sum(net assets)
+  pb                           20121203_20131231  rows=  640,522    3.7s  cum_quota=  437.8MB  -> data/pb/20121203_20131231.parquet
+  pb                           20140101_20151231  rows=1,287,201    4.6s  cum_quota=  437.8MB  -> data/pb/20140101_20151231.parquet
+  pb                           20160101_20171231  rows=1,505,161    4.9s  cum_quota=  446.4MB  -> data/pb/20160101_20171231.parquet
+  pb                           20180101_20191231  rows=1,748,290    5.5s  cum_quota=  467.7MB  -> data/pb/20180101_20191231.parquet
+  pb                           20200101_20211231  rows=2,014,842    5.3s  cum_quota=  481.5MB  -> data/pb/20200101_20211231.parquet
+  pb                           20220101_20220331  rows=  269,204    1.7s  cum_quota=  481.5MB  -> data/pb/20220101_20220331.parquet
+  pb_ext                       20220401_20231231  rows=2,092,408    7.7s  cum_quota=  497.9MB  -> data/pb_ext/20220401_20231231.parquet
+  pb_ext                       20240101_20251231  rows=2,487,986   12.8s  cum_quota=  515.3MB  -> data/pb_ext/20240101_20251231.parquet
+  pb_ext                       20260101_20260808  rows=  748,368    2.9s  cum_quota=  515.3MB  -> data/pb_ext/20260101_20260808.parquet
+[11/12] turnover_rate — 图24, daily then 3-month moving average
+  turnover                     20121203_20131231  rows=  640,522    6.9s  cum_quota=  532.6MB  -> data/turnover/20121203_20131231.parquet
+  turnover                     20140101_20151231  rows=1,287,201   14.1s  cum_quota=  554.6MB  -> data/turnover/20140101_20151231.parquet
+  turnover                     20160101_20171231  rows=1,505,161   17.3s  cum_quota=  580.8MB  -> data/turnover/20160101_20171231.parquet
+  turnover                     20180101_20191231  rows=1,748,290   20.5s  cum_quota=  612.0MB  -> data/turnover/20180101_20191231.parquet
+  turnover                     20200101_20211231  rows=2,014,842   24.4s  cum_quota=  648.4MB  -> data/turnover/20200101_20211231.parquet
+  turnover                     20220101_20220331  rows=  269,204    3.0s  cum_quota=  648.4MB  -> data/turnover/20220101_20220331.parquet
+  turnover_ext                 20220401_20231231  rows=2,092,408   20.6s  cum_quota=  690.9MB  -> data/turnover_ext/20220401_20231231.parquet
+  turnover_ext                 20240101_20251231  rows=2,487,986   29.1s  cum_quota=  735.7MB  -> data/turnover_ext/20240101_20251231.parquet
+  turnover_ext                 20260101_20260808  rows=  748,368    7.6s  cum_quota=  749.1MB  -> data/turnover_ext/20260101_20260808.parquet
+[12/12] industry snapshots
+
+done. quota used: 749 MB
+
+=== 补抓 2007-2012 选股字段（图6 十分组） 2026-08-10 23:11 ===
+/Users/escape/miniconda3/envs/rq/lib/python3.11/site-packages/rqdatac/client.py:263: UserWarning: Your account will be expired after  21 days. Please call us at 0755-22676337 to upgrade or purchase or renew your contract.
+  warnings.warn("Your account will be expired after  {} days. "
+quota: 749 MB used, 325 MB left
+
+[1/13] metadata
+[2/13] post-adjusted open+close — report window
+  price_post                   6 block(s) already cached, skipped
+[3/13] market_cap — report window
+  market_cap                   6 block(s) already cached, skipped
+[4/13] raw close + limit_up + volume + turnover — report window
+  price_raw                    6 block(s) already cached, skipped
+[5/13] ST / suspension flags
+  is_st_stock                  8 block(s) already cached, skipped
+  is_suspended                 8 block(s) already cached, skipped
+[6/13] back-history post-adjusted close (price percentile baseline)
+  price_post_back              7 block(s) already cached, skipped
+[7/13] extension to today
+  price_post_ext               3 block(s) already cached, skipped
+  market_cap_ext               3 block(s) already cached, skipped
+  price_raw_ext                3 block(s) already cached, skipped
+[8/13] index prices
+  index_price                  14 block(s) already cached, skipped
+[9/13] index components — 图19 PB, 图22-24 市值中位数与换手率
+  index_components             8 block(s) already cached, skipped
+[10/13] pb_ratio_lyr — 图19, 整体法 PB = sum(market_cap) / sum(net assets)
+  pb                           6 block(s) already cached, skipped
+  pb_ext                       3 block(s) already cached, skipped
+[11/13] turnover_rate — 图24, daily then 3-month moving average
+  turnover                     6 block(s) already cached, skipped
+  turnover_ext                 3 block(s) already cached, skipped
+[12/13] 图6 十分组所需的 2007-2012 选股字段
+  price_open_back              20070101_20081231  rows=  742,628    8.8s  cum_quota=  755.5MB  -> data/price_open_back/20070101_20081231.parquet
+  price_open_back              20090101_20101231  rows=  848,758    5.9s  cum_quota=  760.0MB  -> data/price_open_back/20090101_20101231.parquet
+  price_open_back              20110101_20121202  rows=1,073,012    8.9s  cum_quota=  765.1MB  -> data/price_open_back/20110101_20121202.parquet
+  market_cap_back              20070101_20081231  rows=  742,628    3.4s  cum_quota=  765.1MB  -> data/market_cap_back/20070101_20081231.parquet
+  market_cap_back              20090101_20101231  rows=  848,758    3.2s  cum_quota=  768.6MB  -> data/market_cap_back/20090101_20101231.parquet
+  market_cap_back              20110101_20121202  rows=1,073,012    3.1s  cum_quota=  777.0MB  -> data/market_cap_back/20110101_20121202.parquet
+  price_raw_back               20070101_20081231  rows=  742,628    3.2s  cum_quota=  777.0MB  -> data/price_raw_back/20070101_20081231.parquet
+  price_raw_back               20090101_20101231  rows=  848,758    3.1s  cum_quota=  796.6MB  -> data/price_raw_back/20090101_20101231.parquet
+  price_raw_back               20110101_20121202  rows=1,073,012    2.2s  cum_quota=  796.6MB  -> data/price_raw_back/20110101_20121202.parquet
+  is_st_stock (back)           20070101_20081231  rows=   80,843   56.8s  cum_quota=  809.8MB  -> data/st/20070101_20081231.parquet
+  is_st_stock (back)           20090101_20101231  rows=   79,176    2.3s  cum_quota=  809.8MB  -> data/st/20090101_20101231.parquet
+  is_st_stock (back)           20110101_20121202  rows=   71,109    2.0s  cum_quota=  809.8MB  -> data/st/20110101_20121202.parquet
+  is_suspended (back)          20070101_20081231  rows=   57,977    1.3s  cum_quota=  809.8MB  -> data/suspended/20070101_20081231.parquet
+  is_suspended (back)          20090101_20101231  rows=   40,859    0.7s  cum_quota=  809.8MB  -> data/suspended/20090101_20101231.parquet
+  is_suspended (back)          20110101_20121202  rows=   44,676    0.8s  cum_quota=  809.8MB  -> data/suspended/20110101_20121202.parquet
+[13/13] industry snapshots
+
+done. quota used: 810 MB
