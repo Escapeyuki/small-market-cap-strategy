@@ -30,4 +30,9 @@ __pycache__/
 #   harvest.log —— 20 KB，记录了每个块的抓取时间、行数与额度消耗。对于一份
 #                  21 天后就再也拉不出来的数据集，这是它唯一的来源凭证，值得留。
 #   德邦研报 PDF —— 1.4 MB，是整个复现的规格书。
+
+# 忽略CLAUDE.md
 CLAUDE.md
+
+# 忽略 .vscode
+.vscode/
