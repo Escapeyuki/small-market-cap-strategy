@@ -1,8 +1,12 @@
-"""第一次验收 —— 小市值100 月频回测，对照研报表1 / 表3 / 图7。
+"""验收 —— 小市值100 月频回测，对照研报表1 / 表3 / 图7。
 
 **先验假设在此一次列清，跑完如实报告，不为凑 43.1% 回头调参**（grill.md Q14）。
 对不上时一次只动一个变量，把「哪个假设、推动了多少」记成一张映射表——那张表
 比对上数字本身更值钱。
+
+⚠️ **本脚本跑的不是研报口径。** 成交已统一为 T+1 开盘（grill.md Q19），而研报用
+的是 T 日收盘排名 + T 日收盘成交。所以下面每一处「本文 vs 研报」的差值里都含
+一项**口径差**，不再是纯粹的复现误差——研报那一列含未来函数，本文这一列不含。
 
     python scripts/02_backtest.py            # 主口径，约 1 分钟
     python scripts/02_backtest.py --full     # 再加频率对比与市值分档
@@ -44,10 +48,6 @@ def load_market(sessions):
     prices = data.series_many("price_post", ["close", "open"], START, END)
     close = prices["close"].reindex(sessions)
     return close, prices["open"].reindex(sessions)
-
-
-def strategy(selection, close, open_, sessions, mode):
-    return bt.run(selection, close, open_, sessions, mode=mode)
 
 
 def compare_table1(nav, benchmark):
@@ -149,8 +149,8 @@ def sensitivity(calendar, sessions, close, open_, base_panel, base_annual):
     """
     size = CFG["portfolio"]["size"]
 
-    def annual(selection, mode="report_close", cost=B["cost_per_side"]):
-        result = bt.run(selection, close, open_, sessions, mode=mode, cost_per_side=cost)
+    def annual(selection, cost=B["cost_per_side"]):
+        result = bt.run(selection, close, open_, sessions, cost_per_side=cost)
         return m.annualized_return(result.nav)
 
     instruments = data.load("instruments")
@@ -158,11 +158,11 @@ def sensitivity(calendar, sessions, close, open_, base_panel, base_annual):
     no_limit = [p for p in u.BUYABLE if p is not u.not_limit_up]
     no_st = [p for p in u.BUYABLE if p is not u.not_st]
 
+    # 「成交改为 T+1 开盘」这一行没了——它现在就是基准本身。那次实测的结论
+    # （月频只值 −0.09pp）留在 grill.md，代码删掉不影响它成立。
     variants = [
         ("调仓日改为每月第一个周一",
          lambda: annual(u.smallest(u.panel(monday_dates), size))),
-        ("成交改为 T+1 开盘（next_open）",
-         lambda: annual(u.smallest(base_panel, size), mode="next_open")),
         ("次新改为上市满 20 个自然日",
          lambda: annual(u.smallest(calendar_day_listing(base_panel, instruments), size))),
         ("不剔除调仓日涨停股",
@@ -195,10 +195,11 @@ def main(full):
     print(__doc__.split("\n")[0])
     print(f"\n先验假设（跑之前固定）")
     print(f"  区间          {START} ~ {END}（{len(sessions)} 个交易日）")
-    print(f"  调仓          每月第一个交易日")
-    print(f"  排序因子      market_cap 总市值，升序取最小 {B and CFG['portfolio']['size']} 只，等权")
+    print(f"  调仓          每月第一个交易日出信号")
+    print(f"  成交          **T+1 开盘**（grill.md Q19）—— 研报用的是 T 日收盘，属未来函数")
+    print(f"  排序因子      market_cap 总市值，升序取最小 {CFG['portfolio']['size']} 只，等权")
     print(f"  选股范围      非 ST、上市满 {CFG['universe']['min_listed_days']} 个交易日；"
-          f"调仓日剔除涨停与停牌")
+          f"信号日剔除涨停与停牌")
     print(f"  成本          单边 {B['cost_per_side'] * 100:.2f}%，按 sum|Δw| 计")
     print(f"  基准          {BENCH}   年化口径 自然日折算")
 
@@ -211,23 +212,21 @@ def main(full):
           f"每期合格股票 {u.eligible(panel).sum(axis=1).median():.0f} 只（中位数），"
           f"选中过 {int(selection.any().sum())} 只不同股票")
 
-    results = {}
-    for mode in B["execution_modes"]:
-        results[mode] = strategy(selection, close, open_, sessions, mode)
-        annual = m.annualized_return(results[mode].nav)
-        print(f"  {mode:14s} 年化 {annual * 100:6.2f}%   终值 {results[mode].nav.iloc[-1]:6.2f}")
+    main_result = bt.run(selection, close, open_, sessions)
+    print(f"  年化 {m.annualized_return(main_result.nav) * 100:.2f}%   "
+          f"终值 {main_result.nav.iloc[-1]:.2f}")
 
-    main_result = results["report_close"]
     print("\n" + "=" * 78)
-    print("表1 对照 —— 小市值100 月频，report_close 口径（研报口径）    单位：%")
+    print("表1 对照 —— 小市值100 月频，T+1 开盘成交    单位：%")
     print("=" * 78)
+    print("研报那一行是它自己 T 日收盘成交跑出来的，含未来函数；本文这一行不含。")
+    print("两者不是同一个口径，差值应当理解为「把未来函数拿掉之后少了多少」。")
     table = compare_table1(main_result.nav, benchmark)
     structural_checks(table, main_result, selection)
 
-    table.to_csv(OUTPUT / "table1_monthly_report_close.csv")
-    for mode, result in results.items():
-        result.nav.to_csv(OUTPUT / f"nav_monthly_{mode}.csv")
-        result.turnover.to_csv(OUTPUT / f"turnover_monthly_{mode}.csv")
+    table.to_csv(OUTPUT / "table1_monthly.csv")
+    main_result.nav.to_csv(OUTPUT / "nav_monthly.csv")
+    main_result.turnover.to_csv(OUTPUT / "turnover_monthly.csv")
     benchmark.to_csv(OUTPUT / "nav_benchmark.csv")
 
     if not full:
@@ -237,15 +236,17 @@ def main(full):
     print("\n" + "=" * 78)
     print("图7 —— 调仓频率对比（研报：周月差异很小，日频显著跑输）")
     print("=" * 78)
+    print("grill.md 预言过：研报口径的未来函数收益在**日频下**才真正兑现——日频调仓时")
+    print("排名与成交同在一个收盘价上。删掉那条口径之后，日频这一行该跌得更多。")
     for freq in B["frequencies"]:
         dates = bt.rebalance_dates(calendar, freq, START, END)
         picked = u.smallest(u.panel(dates), CFG["portfolio"]["size"])
-        result = strategy(picked, close, open_, sessions, "report_close")
+        result = bt.run(picked, close, open_, sessions)
         annual = m.annualized_return(result.nav)
         print(f"  {freq:8s} 调仓 {len(dates):>4} 次   年化 {annual * 100:7.2f}%   "
               f"终值 {result.nav.iloc[-1]:7.2f}   双边换手率中位数 "
               f"{result.turnover.median() * 100:5.1f}%")
-        result.nav.to_csv(OUTPUT / f"nav_{freq}_report_close.csv")
+        result.nav.to_csv(OUTPUT / f"nav_{freq}.csv")
 
     print("\n" + "=" * 78)
     print("表3 / 图30 —— 市值分档（研报：单调递减，43.1% → 9.7%）")
@@ -254,7 +255,7 @@ def main(full):
     bands = {}
     for i, band in enumerate(CFG["portfolio"]["bands"]):
         picked = u.smallest(panel, size, skip=band - size)
-        result = strategy(picked, close, open_, sessions, "report_close")
+        result = bt.run(picked, close, open_, sessions)
         annual = m.annualized_return(result.nav)
         bands[band] = annual
         print(f"  小市值{band:<5d} 年化 {annual * 100:7.2f}%   研报 {T3_ANNUAL[i]:6.1f}%   "

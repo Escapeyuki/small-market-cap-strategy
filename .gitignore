@@ -17,6 +17,27 @@ output/*
 !output/sensitivity.csv
 !output/bands_annual_return.csv
 
+# 分析层：同一条线划在同一个地方。留下的是结论（每张图一行到几十行的汇总）
+# 与图26 的逐笔明细——后者是 Q14 结构性验收「调出归因 97.85/2.15/0.00」的
+# 审计凭证，2368 行 98 KB，没有它那句结论就只是个断言。
+# 不留的是日度/事件级序列：nav_deciles、entry_exit_percentiles、pb_aggregate、
+# turnover_rate_aggregate、rolling_correlation，合计 1.5 MB，跑一遍就有。
+!output/exit_reasons_monthly.csv
+!output/exit_reasons_detail.csv
+!output/gini_monthly.csv
+!output/cap_percentile_shift.csv
+!output/calendar_effect.csv
+!output/turnover_both.csv
+!output/deciles_annual_return.csv
+!output/industry_*.csv
+
+# 22 张诊断图，3.1 MB。**这是一个有代价的选择**：PNG 是二进制，每次重跑重画都
+# 会在 history 里再压一份。留它的理由和留汇总表一样——data/ 不进 git，图就是
+# 「复现确实成立」在仓库里唯一看得见的证据。若哪天嫌 history 胖了，删掉下面
+# 这两行即可，`python scripts/03_analytics.py --deciles` 一分钟重画一套。
+!output/figures/
+!output/figures/*.png
+
 # Python
 __pycache__/
 *.py[cod]

@@ -124,7 +124,7 @@ def wide(dataset, field, start=None, end=None):
     return _pivot([load(dataset, start, end)], field)
 
 
-def series_many(name, fields, start=None, end=None, dates=None):
+def series_many(name, fields, start=None, end=None, dates=None, ids=None):
     """同 `wide`，但会把一条逻辑序列的各个时段拼起来；
     一个块无论要取几个字段都只读一遍。
 
@@ -139,9 +139,12 @@ def series_many(name, fields, start=None, end=None, dates=None):
         except FileNotFoundError:
             continue
         # 选股只发生在调仓日，在这里先筛一道，月频回测的 pivot 就是 112 行
-        # 而不是 2267 行。
+        # 而不是 2267 行。同理，只关心少数几只股票时先筛列：2000 年起的全
+        # 市场后复权价 pivot 出来要 300 MB，而组合真正碰过的只有其中一小部分。
         if dates is not None:
             df = df[df["date"].isin(pd.DatetimeIndex(dates))]
+        if ids is not None:
+            df = df[df["order_book_id"].isin(pd.Index(ids))]
         for f in fields:
             if f in df.columns:
                 collected[f].append(df[["date", "order_book_id", f]])
@@ -151,8 +154,8 @@ def series_many(name, fields, start=None, end=None, dates=None):
     return {f: _pivot(frames, f) for f, frames in collected.items()}
 
 
-def series(name, field, start=None, end=None, dates=None):
-    return series_many(name, [field], start, end, dates)[field]
+def series(name, field, start=None, end=None, dates=None, ids=None):
+    return series_many(name, [field], start, end, dates, ids)[field]
 
 
 def flatten(df):
