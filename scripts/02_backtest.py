@@ -4,9 +4,10 @@
 对不上时一次只动一个变量，把「哪个假设、推动了多少」记成一张映射表——那张表
 比对上数字本身更值钱。
 
-⚠️ **本脚本跑的不是研报口径。** 成交已统一为 T+1 开盘（grill.md Q19），而研报用
-的是 T 日收盘排名 + T 日收盘成交。所以下面每一处「本文 vs 研报」的差值里都含
-一项**口径差**，不再是纯粹的复现误差——研报那一列含未来函数，本文这一列不含。
+⚠️ **本脚本跑出来的不是研报那个数。** 成交已统一为 T+1 开盘（grill.md Q19）。
+研报**从未交代它在什么价上成交**；本项目原按「T 日收盘成交」重建它，那是未来
+函数，已删除。所以下面每一处「本文 vs 研报」的差值里都含一项口径差，不再是
+纯粹的复现误差。
 
     python scripts/02_backtest.py            # 主口径，约 1 分钟
     python scripts/02_backtest.py --full     # 再加频率对比与市值分档
@@ -196,7 +197,8 @@ def main(full):
     print(f"\n先验假设（跑之前固定）")
     print(f"  区间          {START} ~ {END}（{len(sessions)} 个交易日）")
     print(f"  调仓          每月第一个交易日出信号")
-    print(f"  成交          **T+1 开盘**（grill.md Q19）—— 研报用的是 T 日收盘，属未来函数")
+    print(f"  成交          **T+1 开盘**（grill.md Q19）—— 研报未交代成交价，"
+          f"原重建的 T 日收盘属未来函数，已删")
     print(f"  排序因子      market_cap 总市值，升序取最小 {CFG['portfolio']['size']} 只，等权")
     print(f"  选股范围      非 ST、上市满 {CFG['universe']['min_listed_days']} 个交易日；"
           f"信号日剔除涨停与停牌")
@@ -219,8 +221,7 @@ def main(full):
     print("\n" + "=" * 78)
     print("表1 对照 —— 小市值100 月频，T+1 开盘成交    单位：%")
     print("=" * 78)
-    print("研报那一行是它自己 T 日收盘成交跑出来的，含未来函数；本文这一行不含。")
-    print("两者不是同一个口径，差值应当理解为「把未来函数拿掉之后少了多少」。")
+    print("研报没说它在什么价上成交（已查证）。差值里含一项口径差，不是纯复现误差。")
     table = compare_table1(main_result.nav, benchmark)
     structural_checks(table, main_result, selection)
 
@@ -236,8 +237,8 @@ def main(full):
     print("\n" + "=" * 78)
     print("图7 —— 调仓频率对比（研报：周月差异很小，日频显著跑输）")
     print("=" * 78)
-    print("grill.md 预言过：研报口径的未来函数收益在**日频下**才真正兑现——日频调仓时")
-    print("排名与成交同在一个收盘价上。删掉那条口径之后，日频这一行该跌得更多。")
+    print("这三行同时是「研报用了 T 日收盘」这个推断的证据：研报的日频结论只在那个")
+    print("口径下复现得出来，换成 T+1 开盘后方向相反。详见 grill.md Q19。")
     for freq in B["frequencies"]:
         dates = bt.rebalance_dates(calendar, freq, START, END)
         picked = u.smallest(u.panel(dates), CFG["portfolio"]["size"])

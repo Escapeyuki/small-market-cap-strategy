@@ -40,8 +40,8 @@ backtest:
   cost_per_side: 0.0015
   frequencies: [monthly, weekly, daily]
   # 成交口径只有一种：T 日收盘出信号，T+1 开盘成交（grill.md Q19，取代 Q4）。
-  # 研报的「T 日收盘排名 + T 日收盘成交」是未来函数，已从引擎里删除；两者
-  # 月频只差 0.09pp 的实测结论记在 grill.md，不会因为代码删掉而失效。
+  # 研报未交代它在什么价上成交；本项目原先重建的「T 日收盘成交」是未来函数，
+  # 已删除。两者月频只差 0.09pp 的实测结论记在 grill.md，不因代码删掉而失效。
 
 enhance:                     # 图 31
   take_profit: 0.13
