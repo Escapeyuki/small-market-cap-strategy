@@ -82,6 +82,7 @@ ERAS = {
     "market_cap": ["market_cap_back", "market_cap", "market_cap_ext"],
     "pb": ["pb", "pb_ext"],
     "turnover": ["turnover", "turnover_ext"],
+    "free_circ": ["free_circ", "free_circ_ext"],
 }
 
 
