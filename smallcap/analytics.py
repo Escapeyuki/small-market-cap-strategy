@@ -275,11 +275,12 @@ def event_percentiles(events, close):
 # --------------------------------------------------------------------------- 图15–18
 
 def industry_weights(ids, caps, industry):
-    """图15–18 —— 市值加权的行业占比。
+    """图15–18 —— 按 `caps` 加权的行业占比（只数占比会被小盘拉平，没意义）。
 
-    研报注：「图中的百分比是各个行业的股票的总市值占指数成分所有股票的总市值
-    的比例」，所以是市值加权而不是只数占比。小市值100 里两者接近（成分市值本
-    就相近），三大指数里差别很大。
+    口径由调用方给定，函数本身与口径无关。研报注写「各行业总市值占指数总市值
+    之比」，但那句注写错了口径：图16 实测研报用的是**自由流通发布权重**、分类用
+    citics_2019（见 grill.md「两处对不齐」#2），所以 `03_analytics` 传的是
+    `free_float_cap` 而非 `market_cap`。
     """
     frame = pd.DataFrame({"cap": pd.Series(caps).reindex(ids)}).dropna()
     frame["industry"] = pd.Series(industry).reindex(frame.index)
@@ -318,18 +319,38 @@ def trailing_mean(series, months=12):
 
 # --------------------------------------------------------------------------- 图24
 
-def aggregate_turnover(members, total_turnover, turnover_rate):
-    """图24 —— 整体法日均换手率 = Σ成交额 / Σ流通市值。
+def aggregate_turnover_by_cap(members, total_turnover, market_cap):
+    """图24 —— 整体法日均换手率 = Σ成交额 / Σ市值。分母用哪种市值口径由调用方给定。
 
-    数据里没有流通市值这一列，但它由换手率的定义直接给出：
-    流通市值 = 成交额 / 换手率。绕这一圈只是为了拿到整体法要的**分母**，
-    换手率本身仍是数据源给的那个数，没有二次估计。
-    （`turnover_rate` 是百分数，实测：平安银行 2015-06-12 为 1.6125。）
+    对个股比值取平均会被几只极小市值的股票拉爆，所以先各自加总再相除（研报的
+    「整体法」）；只在两个字段都齐的成员格子上求和，保证分子分母是同一批股票。
     """
     amount = _aligned(total_turnover, members)
-    rate = _aligned(turnover_rate, members)
-    free_float = amount / (rate / 100.0).where(rate > 0)
-    return amount.where(free_float.notna()).sum(axis=1) / free_float.sum(axis=1)
+    cap = _aligned(market_cap, members)
+    return amount.where(cap.notna()).sum(axis=1) / cap.sum(axis=1)
+
+
+def aggregate_turnover(members, total_turnover, turnover_rate):
+    """流通A股口径的整体法换手率 —— 分母由换手率恒等式反推。
+
+    数据里没有市值列，但换手率的定义直接给出分母：流通市值 = 成交额 / 换手率。
+    **实测这个反推出来的分母就是流通A股市值**（重建流通市值 /(收盘×流通A股) = 0.997），
+    而研报图24 的水平更像自由流通口径。所以正式图改用 `free_float_cap` 作分母
+    （见 `03_analytics.figures_24_25` 与 grill.md「两处对不齐」），这个函数保留作对照。
+    （`turnover_rate` 是百分数，实测：平安银行 2015-06-12 为 1.6125。）
+    """
+    circulating = total_turnover / (turnover_rate / 100.0).where(turnover_rate > 0)
+    return aggregate_turnover_by_cap(members, total_turnover, circulating)
+
+
+def free_float_cap(raw_close, free_circulation):
+    """自由流通市值 = 不复权收盘价 × 自由流通股本。
+
+    rqdatac 没有现成的自由流通市值因子（标定过 6 个候选：3 个是总市值、3 个是
+    流通市值，无一是自由流通），只能由 `get_shares` 的 free_circulation 自己算。
+    用不复权价，与 market_cap 的口径一致（市值 = 不复权价 × 股本）。
+    """
+    return raw_close * free_circulation
 
 
 # --------------------------------------------------------------------------- 图25

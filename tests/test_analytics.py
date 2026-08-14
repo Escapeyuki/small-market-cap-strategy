@@ -294,13 +294,31 @@ def test_median_cap_takes_the_middle_holding_not_the_middle_of_the_market():
     assert got.loc[DATES[0]] == pytest.approx(2e8)
 
 
-def test_aggregate_turnover_weights_by_free_float_via_the_turnover_identity():
-    """成交额 [100,300]、换手率 [1%,2%] → 流通市值 [10000,15000]，
+def test_aggregate_turnover_reconstructs_circulating_cap_via_the_turnover_identity():
+    """换手率恒等式反推出来的分母是**流通A股市值**（实测 0.997），不是自由流通。
+    成交额 [100,300]、换手率 [1%,2%] → 流通市值 [10000,15000]，
     整体法 400/25000 = 1.60%，等权平均则是 1.50%。"""
     amount = frame([[100.0, 300.0, 0.0, 0.0]] * 3)
     rate = frame([[1.0, 2.0, 1.0, 1.0]] * 3)
     got = a.aggregate_turnover(members([["A.XSHE", "B.XSHE"]]), amount, rate)
     assert got.loc[DATES[0]] == pytest.approx(0.016)
+
+
+def test_aggregate_turnover_by_cap_divides_summed_amount_by_summed_cap():
+    """整体法直接给市值分母：Σ成交额 / Σ市值 = 400 / 25000 = 1.60%。"""
+    amount = frame([[100.0, 300.0, 0.0, 0.0]] * 3)
+    cap = frame([[10000.0, 15000.0, 0.0, 0.0]] * 3)
+    got = a.aggregate_turnover_by_cap(members([["A.XSHE", "B.XSHE"]]), amount, cap)
+    assert got.loc[DATES[0]] == pytest.approx(0.016)
+
+
+def test_free_float_cap_is_close_times_free_shares():
+    """自由流通市值 = 不复权收盘价 × 自由流通股本。"""
+    close = frame([[10.0, 20.0, 0.0, 0.0]] * 3)
+    shares = frame([[1e8, 5e7, 0.0, 0.0]] * 3)
+    got = a.free_float_cap(close, shares)
+    assert got.loc[DATES[0], "A.XSHE"] == pytest.approx(1e9)
+    assert got.loc[DATES[0], "B.XSHE"] == pytest.approx(1e9)
 
 
 # --------------------------------------------------------------------------- 图25

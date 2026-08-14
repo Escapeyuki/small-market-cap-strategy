@@ -226,37 +226,58 @@ def figures_11_to_14(traded):
 # --------------------------------------------------------------------------- 图15–18
 
 def figures_15_to_18(members_by_name, market_cap):
-    heading("图15–18 —— 行业分布（截至 2022-03-31，中信一级）")
+    heading("图15–18 —— 行业分布（截至 2022-03-31，中信一级，自由流通市值加权）")
     snapshot = pd.Timestamp(END)
     industry = data.load("industry")
     latest = industry[industry["date"] <= snapshot]["date"].max()
     mapping = (industry[industry["date"] == latest]
                .set_index("order_book_id")["first_industry_name"])
-    caps = market_cap.loc[snapshot]
+
+    # 加权口径用**自由流通市值**，不是研报注写的「总市值占比」——那句注写错了口径：
+    # 沪深300 银行 按总市值 21.0% vs 按自由流通 12.3%，只有后者对上研报图16（12.77%）；
+    # 机制是大国有行自由流通仅占总市值 4-6%。分类则须用 citics_2019（本地 zx 源把宁德时代
+    # 等错分到汽车），数据已按 citics_2019 重抓。两者都对之后沪深300 全 28 行业对上研报
+    # （最大 0.62pp，发布权重按 citics_2019 汇总逐行一分不差）。见 grill.md「两处对不齐」#2。
+    raw_close = data.series("price_raw", "close", START, END)
+    free_circ = (data.series("free_circ", "free_circulation", START, END)
+                 .reindex(index=raw_close.index.union([snapshot]),
+                          columns=raw_close.columns).ffill())
+    ffcap = a.free_float_cap(
+        raw_close.reindex(index=raw_close.index.union([snapshot])).ffill().loc[snapshot],
+        free_circ.loc[snapshot])
+    total_cap = market_cap.loc[snapshot]        # 总市值口径，保留作诊断对照
     print(f"  行业口径取 {latest:%Y-%m-%d} 的快照"
           f"（{'与统计日同日' if latest == snapshot else '统计日当天没有快照，取最近的一次'}）")
 
-    largest = {}
+    largest, top5 = {}, {}
     for i, (name, members) in enumerate(members_by_name.items(), start=15):
         row = members.loc[members.index[members.index <= snapshot][-1]]
         ids = row[row].index
-        weights = a.industry_weights(ids, caps, mapping)
-        largest[name] = weights.iloc[0]
+        weights = a.industry_weights(ids, ffcap, mapping)         # 自由流通（正式）
+        diag = a.industry_weights(ids, total_cap, mapping)        # 总市值（诊断对照）
+        lead = weights.index[0]
+        largest[name], top5[name] = weights.iloc[0], weights.head(5).sum()
         top = "、".join(f"{k} {v:.0%}" for k, v in weights.head(3).items())
-        print(f"  {name:10s} {len(ids):>4} 只   最大行业 {weights.iloc[0]:5.1%}   "
+        print(f"  {name:10s} {len(ids):>4} 只   最大 {lead} {weights.iloc[0]:5.1%}"
+              f"（总市值口径 {diag.get(lead, float('nan')):5.1%}）   "
               f"前五合计 {weights.head(5).sum():5.1%}   {top}")
         weights.to_csv(OUTPUT / f"industry_{name}.csv")
         p.save(
             p.barh(weights[weights > 0.005], f"图{i} {name}行业分布",
                    note=f"{SOURCE}。行业为中信一级（取 {latest:%Y-%m-%d} 快照），"
-                        f"占比按成分股总市值加权；小于 0.5% 的行业未画。"),
+                        f"占比按成分股自由流通市值加权；小于 0.5% 的行业未画。"),
             FIGURES / f"fig{i}_industry_{name}.png",
         )
     print(f"\n  研报图15 的前三是 机械 20%、基础化工 11%、纺织服装 9% —— 本文对得上。")
-    print(f"  但研报 4.5 节「小市值100 集中度显著高于三大指数」只对中证500/1000 成立："
-          f"沪深300 的最大行业（银行 {largest['沪深300']:.0%}）与小市值100 同量级。")
-    print(f"  研报自己的数也是这样（沪深300 前五 53.6% vs 小市值100 56%），"
-          f"所以这不是复现出了偏差，是研报那句话说得太满。")
+    print(f"  图16 沪深300 银行 {largest['沪深300']:.1%}（研报 12.77% ＝ 发布权重按 citics_2019 汇总）："
+          f"研报注写「总市值占比」是错的，实为自由流通/发布权重（总市值口径下 21.0%）。")
+    # 换成正确口径后，研报 4.5 节那句「小市值100 集中度显著高于三大指数」按口径分两说，
+    # 与旧（总市值）口径下「说得太满」的结论方向相反 —— 见 grill.md「两处对不齐」#2。
+    print(f"  研报 4.5 节「小市值100 集中度显著高于三大指数」按口径分两说：")
+    print(f"    最大单一行业 小市值100 {largest['小市值100']:.0%} > 沪深300 {largest['沪深300']:.0%}"
+          f" / 中证500 {largest['中证500']:.0%} / 中证1000 {largest['中证1000']:.0%}，这条成立；")
+    print(f"    前五合计 小市值100 {top5['小市值100']:.0%} vs 沪深300 {top5['沪深300']:.0%} 接近，"
+          f"「显著」两字按此口径偏满。")
 
 
 # --------------------------------------------------------------------------- 图19
@@ -305,20 +326,29 @@ def figures_20_to_23(members_by_name, market_cap, sessions):
 # --------------------------------------------------------------------------- 图24/25
 
 def figures_24_25(members_by_name, traded, result, sessions):
-    heading("图24 —— 整体法日均换手率（3 个月移动平均）")
-    rate = data.series("turnover", "turnover_rate", START, END)
+    heading("图24 —— 整体法日均换手率（自由流通口径，3 个月移动平均）")
     amount = data.series("price_raw", "total_turnover", START, END)
+    raw_close = data.series("price_raw", "close", START, END)          # 不复权
+    free_circ = (data.series("free_circ", "free_circulation", START, END)
+                 .reindex(index=sessions, columns=raw_close.columns).ffill())
+    ffcap = a.free_float_cap(raw_close, free_circ)                     # 自由流通市值
+    rate = data.series("turnover", "turnover_rate", START, END)        # 流通A股对照口径
     frame = pd.DataFrame(
-        {name: a.aggregate_turnover(members, amount, rate).reindex(sessions)
+        {name: a.aggregate_turnover_by_cap(members, amount, ffcap).reindex(sessions)
                     .rolling(60, min_periods=60).mean()
          for name, members in members_by_name.items()}
     )
     for name in frame:
         print(f"  {name:10s} 中位数 {frame[name].median():.2%}")
+    small = members_by_name["小市值100"]
+    circ = (a.aggregate_turnover(small, amount, rate).reindex(sessions)
+            .rolling(60, min_periods=60).mean().median())
     print("\n  研报 4.6 节：小市值股票的换手率总体高于市值更大的股票（与直觉相反）")
+    print(f"  分母口径：小市值100 自由流通 {frame['小市值100'].median():.2%}"
+          f"（流通A股对照 {circ:.2%}，研报图目测 4-6%，见 grill.md「两处对不齐」）")
     p.save(
         p.lines(frame, "图24 小市值100 组合与三大指数成分股每日平均换手率",
-                note=f"{SOURCE}。整体法，取 3 个月（60 个交易日）移动平均。",
+                note=f"{SOURCE}。整体法，分母=自由流通市值，取 3 个月（60 个交易日）移动平均。",
                 percent=True, highlight="小市值100", ylabel="日均换手率"),
         FIGURES / "fig24_turnover_rate.png",
     )

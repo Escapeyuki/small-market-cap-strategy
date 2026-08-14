@@ -158,8 +158,14 @@ def smoke():
     st, st_cost, _ = data.measure("is_st_stock (all, 1mo)", lambda: rq.is_st_stock(ids, s, e))
     susp, susp_cost, _ = data.measure("is_suspended (all, 1mo)", lambda: rq.is_suspended(ids, s, e))
     ind, _, _ = data.measure(
-        "zx_instrument_industry", lambda: rq.zx_instrument_industry(ids, date=e)
+        "get_instrument_industry (citics_2019)",
+        lambda: rq.get_instrument_industry(ids, source="citics_2019", level=1, date=e)
     )
+    shares, _, _ = data.measure(
+        "get_shares (free_circulation)", lambda: rq.get_shares(ids, s, e, fields=["free_circulation"])
+    )
+    assert shares is not None and "free_circulation" in shares.columns, "free_circulation missing"
+    print("     -> free_circulation 可用；图24 自由流通市值分母 = 不复权收盘 × 它（rqdatac 无现成因子）")
 
     # 单次调用的增量不可信（计量有延迟），所以把整块框起来测，再除以
     # field-cell 数，而不是相信任何一次调用的读数。
@@ -291,9 +297,17 @@ def harvest():
     data.harvest("pb_ext", lambda a, b: rq.get_factor(
         block_ids(a, b), ["pb_ratio_lyr"], a, b), EXT_START, EXT_END)
 
-    print("[11/13] turnover_rate — 图24, daily then 3-month moving average")
+    print("[11/13] turnover_rate + free_circulation — 图24 换手率的两种分母口径")
     data.harvest("turnover", turnover, REPORT_START, REPORT_END)
     data.harvest("turnover_ext", turnover, EXT_START, EXT_END)
+    # 换手率分母：turnover_rate 反推出来的是**流通A股市值**（实测 重建流通市值/(收盘×流通A股)
+    # = 0.997），而研报图24 的水平更像**自由流通**口径。rqdatac 没有自由流通市值因子
+    # （6 个候选因子标定后 3 个=总市值、3 个=流通市值，无一是自由流通），只能抓自由流通
+    # 股本，自由流通市值 = 不复权收盘价 × free_circulation（见 analytics.free_float_cap）。
+    data.harvest("free_circ", lambda a, b: rq.get_shares(
+        block_ids(a, b), a, b, fields=["free_circulation"]), REPORT_START, REPORT_END)
+    data.harvest("free_circ_ext", lambda a, b: rq.get_shares(
+        block_ids(a, b), a, b, fields=["free_circulation"]), EXT_START, EXT_END)
 
     print("[12/13] 图6 十分组所需的 2007-2012 选股字段")
     # price_post_back 当初只买了 close（grill Q8：它只用于股价分位数基线），
@@ -315,13 +329,17 @@ def harvest():
         DECILE_START, BACK_END, label="is_suspended (back)")
 
     print("[13/13] industry snapshots")
+    # 中信一级用 citics_2019（研报口径）。旧的 zx_instrument_industry 是异常源：把宁德时代
+    # 等新能源股错分到汽车，与标准中信 citics/citics_2019 都不一致（图16 因此对不齐）。见 grill.md #2。
     if not data.exists("industry", "annual"):
         frames = []
         for year in range(2012, 2027):
             date = f"{year}-12-31" if year < 2026 else EXT_END
-            snap = rq.zx_instrument_industry(live_ids(date), date=date)
+            snap = rq.get_instrument_industry(live_ids(date), source="citics_2019",
+                                              level=1, date=date)
             if snap is not None and len(snap):
-                frames.append(snap.reset_index().assign(date=pd.Timestamp(date)))
+                frames.append(snap.reset_index()[["order_book_id", "first_industry_name"]]
+                              .assign(date=pd.Timestamp(date)))
         data.write("industry", "annual", pd.concat(frames, ignore_index=True))
 
     print(f"\ndone. quota used: {data.quota_used() / 1e6:.0f} MB")
