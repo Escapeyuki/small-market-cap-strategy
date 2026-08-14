@@ -16,6 +16,10 @@ output/*
 !output/table1_*.csv
 !output/sensitivity.csv
 !output/bands_annual_return.csv
+# 样本外汇总表（05_oos.py）：指标对照、逐年、踩踏窗口、调出归因迁移，各几百字节，
+# 是「样本外结论」在仓库里唯一看得见的证据。nav_oos_full.csv 是逐日序列，仍按
+# nav_*.csv 的约定忽略（可离线重算）。
+!output/oos_*.csv
 
 # 分析层：同一条线划在同一个地方。留下的是结论（每张图一行到几十行的汇总）
 # 与图26 的逐笔明细——后者是 Q14 结构性验收「调出归因 97.85/2.15/0.00」的
