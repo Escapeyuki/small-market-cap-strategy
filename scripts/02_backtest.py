@@ -150,14 +150,17 @@ def sensitivity(calendar, sessions, close, open_, base_panel, base_annual):
     """
     size = CFG["portfolio"]["size"]
 
-    def annual(selection, cost=B["cost_per_side"]):
-        result = bt.run(selection, close, open_, sessions, cost_per_side=cost)
+    def annual(selection, cost=B["cost_per_side"], suspended=None):
+        result = bt.run(selection, close, open_, sessions, cost_per_side=cost,
+                        suspended=suspended)
         return m.annualized_return(result.nav)
 
     instruments = data.load("instruments")
     monday_dates = first_monday_rebalances(calendar, START, END)
     no_limit = [p for p in u.BUYABLE if p is not u.not_limit_up]
     no_st = [p for p in u.BUYABLE if p is not u.not_st]
+    # 停牌持仓改为「持有到复牌」而非按冻结价卖出（volume == 0 即停牌，见 grill.md）。
+    suspended = (data.series("price_raw", "volume", START, END).reindex(index=sessions) == 0)
 
     # 「成交改为 T+1 开盘」这一行没了——它现在就是基准本身。那次实测的结论
     # （月频只值 −0.09pp）留在 grill.md，代码删掉不影响它成立。
@@ -170,6 +173,8 @@ def sensitivity(calendar, sessions, close, open_, base_panel, base_annual):
          lambda: annual(u.smallest(base_panel, size, predicates=no_limit))),
         ("不剔除 ST 股",
          lambda: annual(u.smallest(base_panel, size, predicates=no_st))),
+        ("持有停牌持仓（不按冻结价卖出）",
+         lambda: annual(u.smallest(base_panel, size), suspended=suspended)),
         ("手续费改为 0",
          lambda: annual(u.smallest(base_panel, size), cost=0.0)),
     ]

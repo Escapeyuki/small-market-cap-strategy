@@ -35,9 +35,18 @@ def selection(rows):
     return frame
 
 
-def run(rows, closes, opens=None, cost=COST):
+def halts(cells):
+    """cells: {日期序号: [停牌的股票]} → 布尔宽表（volume == 0 的停牌标记）。"""
+    frame = pd.DataFrame(False, index=SESSIONS, columns=IDS)
+    for i, names in cells.items():
+        frame.loc[SESSIONS[i], names] = True
+    return frame
+
+
+def run(rows, closes, opens=None, cost=COST, suspended=None):
     close, open_ = prices(closes, opens)
-    return bt.run(selection(rows), close, open_, SESSIONS, cost_per_side=cost)
+    return bt.run(selection(rows), close, open_, SESSIONS, cost_per_side=cost,
+                  suspended=suspended)
 
 
 # --------------------------------------------------------------------------- 信号日
@@ -224,3 +233,37 @@ def test_a_signal_on_the_final_session_does_not_crash_the_engine():
     closes = [[10, 10]] * 6
     result = run({0: ["A.XSHE"], 5: ["B.XSHE"]}, closes)
     assert len(result.weights) == 1                 # 最后一天的信号作废，不是崩掉
+
+
+# --------------------------------------------------------------------------- 停牌持仓（suspended）
+
+def test_a_suspended_holding_is_carried_through_the_rebalance_not_sold():
+    """给了停牌表后，调仓日卖不掉停牌的持仓：权重原样保留，目标里的新票买不进它的仓。"""
+    closes = [[10, 10]] * 6
+    # 信号 0 建仓 A；信号 2 想换成 B，但成交日（第 3 天）A 停牌
+    result = run({0: ["A.XSHE"], 2: ["B.XSHE"]}, closes, suspended=halts({3: ["A.XSHE"]}))
+    assert result.turnover.iloc[1] == pytest.approx(0.0)          # A 卖不掉、B 买不进 → 没成交
+    assert result.weights.loc[SESSIONS[3]].tolist() == [1.0, 0.0]  # 仍满仓 A
+
+
+def test_a_carried_suspension_realizes_the_gap_on_resumption_not_the_frozen_price():
+    """旧口径按停牌前的冻结价把 A "卖"在 10；新口径持有到复牌，复牌 A 从 10 跌到 5，
+    这段 −50% 如实落进净值——正是旧口径高估掉的部分。"""
+    closes = [[10, 10], [10, 10], [10, 10], [10, 10], [5, 10], [5, 10]]
+    susp = halts({2: ["A.XSHE"], 3: ["A.XSHE"]})     # A 第 2、3 天停牌，第 4 天复牌跌一半
+    corrected = run({0: ["A.XSHE"], 2: ["B.XSHE"]}, closes, suspended=susp)
+    baseline = run({0: ["A.XSHE"], 2: ["B.XSHE"]}, closes)
+
+    # 新口径：第 3 天 A 停牌不动（仍满仓 A），第 4 天 A 复牌 10→5 → 净值腰斩
+    assert corrected.nav.iloc[-1] == pytest.approx((1 - COST) * 0.5)
+    # 旧口径：第 3 天按冻结价 10 把 A 换成 B（付 2·COST），此后持 B 不动，躲过 A 的下跌
+    assert baseline.nav.iloc[-1] == pytest.approx((1 - COST) * (1 - 2 * COST))
+    assert corrected.nav.iloc[-1] < baseline.nav.iloc[-1]         # 旧口径系统性高估
+
+
+def test_a_stock_suspended_on_its_entry_day_is_not_bought():
+    """刚选中的票若在成交日停牌，买不进——不按冻结价建仓，资金留作现金。"""
+    closes = [[10, 10]] * 6
+    result = run({0: ["A.XSHE"]}, closes, suspended=halts({1: ["A.XSHE"]}))
+    assert result.turnover.iloc[0] == pytest.approx(0.0)          # 没买成
+    assert result.nav.iloc[-1] == pytest.approx(1.0)             # 全程空仓持币，连费都没花

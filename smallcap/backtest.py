@@ -109,17 +109,28 @@ def _drift(weights, returns):
     return grown / total if total > 0 else grown
 
 
-def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE):
+def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
+        suspended=None):
     """跑一遍净值。
 
     `selection` 是布尔宽表（行 = **信号日**），来自 universe.smallest / deciles。
     只有真正被选中过的股票参与计算，其余列直接丢掉。
+
+    `suspended`（可选，日期 × order_book_id 布尔宽表，取自 volume == 0）一旦给出，
+    引擎就**不在停牌股上成交**：成交日把「当天停牌」的仓位权重原样冻结——持仓的
+    停牌股卖不掉、继续持有，刚选中却停牌的票也买不进——只把剩下的资金
+    (1 − 冻结权重) 按目标铺到能交易的票上。停牌持仓因此被一路持有到复牌，复牌当天
+    的跳空由 `_legs` 如实计入，而不是按停牌前的冻结价"卖掉"。**不给 `suspended`
+    就是旧口径**（停牌持仓按冻结价被调出，方向上高估收益）——这是一个单变量开关，
+    两种口径的差见 grill.md「停牌持仓的处理」。
     """
     sessions = pd.DatetimeIndex(sessions)
     ids = selection.columns[selection.any(axis=0)]
     close = post_close.reindex(index=sessions, columns=ids)
     open_ = post_open.reindex(index=sessions, columns=ids)
     overnight, intraday, close_to_close = _legs(close, open_)
+    halt = (suspended.reindex(index=sessions, columns=ids).fillna(False).astype(bool).to_numpy()
+            if suspended is not None else None)
 
     counts = selection[ids].sum(axis=1)
     targets = selection[ids].div(counts.where(counts > 0), axis=0).fillna(0.0)
@@ -135,15 +146,25 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE)
     nav = np.empty(len(sessions))
     recorded = {"weights": {}, "drifted": {}, "turnover": {}, "cost": {}}
 
-    def rebalance(signal_date, trade_date, weights, value):
+    def rebalance(signal_date, trade_date, weights, value, t):
         target = targets.loc[signal_date].to_numpy()
-        traded = np.abs(target - weights).sum()        # 双边换手率
+        if halt is not None and halt[t].any():
+            # 当天停牌的票买不进也卖不出：停牌位（持仓的 + 刚选中却停牌的空仓位）的
+            # 权重原样冻结，剩下的资金 (1 − 冻结权重) 才按目标铺到能交易的票上。停牌
+            # 持仓由此被持有到复牌，复牌的跳空落在 _legs 里，不在这里按冻结价卖出。
+            frozen = weights * halt[t]
+            buyable = target * ~halt[t]
+            scale = buyable.sum()
+            final = frozen + (buyable / scale * (1.0 - frozen.sum()) if scale > 0 else 0.0)
+        else:
+            final = target
+        traded = np.abs(final - weights).sum()         # 双边换手率，只算真的动了的部分
         charge = cost_per_side * traded
-        recorded["weights"][trade_date] = target
+        recorded["weights"][trade_date] = final
         recorded["drifted"][trade_date] = weights.copy()
         recorded["turnover"][trade_date] = traded
         recorded["cost"][trade_date] = charge
-        return target, value * (1.0 - charge)
+        return final, value * (1.0 - charge)
 
     for t in range(len(sessions)):
         # 成交日最早也是第 1 个交易日（信号日在它前一天），所以 t == 0 必然空仓，
@@ -151,7 +172,7 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE)
         if t in trades:
             value *= 1.0 + float(weights @ overnight[t])
             weights = _drift(weights, overnight[t])
-            weights, value = rebalance(trades[t], sessions[t], weights, value)
+            weights, value = rebalance(trades[t], sessions[t], weights, value, t)
             value *= 1.0 + float(weights @ intraday[t])
             weights = _drift(weights, intraday[t])
         elif t > 0:
