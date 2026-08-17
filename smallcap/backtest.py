@@ -188,3 +188,110 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
         turnover=pd.Series(recorded["turnover"]).reindex(order),
         cost=pd.Series(recorded["cost"]).reindex(order),
     )
+
+
+def run_with_stops(selection, post_close, post_open, sessions,
+                   take_profit, stop_loss, cost_per_side=COST_PER_SIDE):
+    """在月度小市值组合上叠加止盈 / 止损（研报 4.12 节、图31）。
+
+    研报 4.12（PDF 第 20-21 页 / 研报页码 21-22，4.12 节）原文：「止盈和止损的
+    比率分布设置为 13%和 26%……在每个交易日卖出所有达到止盈或止损条件的股票，
+    并将获得的资金平均应用于剩下的股票中，以保持始终满仓位。」`take_profit` /
+    `stop_loss` 是正的比率阈值；传 `float("inf")` 关掉对应的那一条，两条都传 inf
+    时本函数的净值逐点等于 `run()`（tests/test_backtest 有断言）。
+
+    **研报没交代的三处口径，按 grill.md「止盈止损」的推断实现，均标注在此：**
+
+    1. **参照价 = 本持仓段的建仓成交价（后复权），月内因再分配加仓不重置。** 研报
+       只说「达到止盈/止损条件」，没说相对什么价。取相对建仓价的累计涨跌，而非
+       相对持仓期最高点的回撤——依据是研报自己那句「26%的止损比率较高，很难被
+       触发」：相对建仓价跌 26% 才谈得上「很难触发」，相对最高点回撤 26% 在小市值
+       里极易触发，与原文矛盾。研报按**股票**判定（「卖出所有达到条件的股票」），
+       所以参照价按股票记、不按每笔资金记，加仓不重置。
+
+    2. **成交口径 = T 日收盘判定、T+1 开盘成交**，与主引擎同口径（grill.md Q19）。
+       用 T 日收盘价既判定触发又按它成交是未来函数，与 Q1「无隐式未来函数」抵触。
+       代价是本函数跑出来的图31 与研报之间同样含一项口径差，不是纯复现误差。
+
+    3. **「平均应用于剩下的股票」= 卖出所得对每只剩余持仓等额加仓**（average 取
+       等额，不是按现有权重比例）。
+
+    返回 `(nav, events)`：`nav` 是日度净值；`events` 是按止盈止损**动作日**索引的
+    DataFrame，列 `tp` / `sl`（当次触发的股票只数）、`turnover`（当次双边换手），
+    用来量化研报「止盈多数时段有效、止损很难触发」这句定性结论。
+    """
+    sessions = pd.DatetimeIndex(sessions)
+    ids = selection.columns[selection.any(axis=0)]
+    close = post_close.reindex(index=sessions, columns=ids)
+    open_ = post_open.reindex(index=sessions, columns=ids)
+    overnight, intraday, close_to_close = _legs(close, open_)
+
+    # 建仓参照价取成交日的实际成交价（有开盘价用开盘价，缺则沿用前收——与 _legs
+    # 内部的 at_open 同一口径），触发判定用后复权收盘价。两者必须和净值引擎一致，
+    # 否则「净值涨了多少」与「判定涨了多少」会对不上。
+    prev = close.shift(1)
+    at_open = open_.where(open_.notna() & (open_ > 0) & prev.notna(), prev).to_numpy()
+    close_px = close.to_numpy()
+
+    counts = selection[ids].sum(axis=1)
+    targets = selection[ids].div(counts.where(counts > 0), axis=0).fillna(0.0)
+
+    position = {d: i for i, d in enumerate(sessions)}
+    schedule = trade_dates(selection.index, sessions)
+    trades = {position[trade]: signal for signal, trade in schedule.items()
+              if counts.loc[signal] > 0}
+
+    weights = np.zeros(len(ids))
+    basis = np.full(len(ids), np.nan)          # 每只持仓的建仓参照价（后复权），空仓位 NaN
+    value = 1.0
+    nav = np.empty(len(sessions))
+    pending = None                             # 下一开盘要执行的止盈止损：(sell, tp_n, sl_n)
+    events = {}
+
+    for t in range(len(sessions)):
+        rebalancing = t in trades
+        stopping = pending is not None and not rebalancing   # 月度调仓当天让位给整体换仓
+        if rebalancing or stopping:
+            value *= 1.0 + float(weights @ overnight[t])      # 隔夜腿走旧权重
+            weights = _drift(weights, overnight[t])
+            if rebalancing:
+                target = targets.loc[trades[t]].to_numpy()
+                traded = np.abs(target - weights).sum()
+                weights = target.copy()
+                basis = np.where(target > 0, at_open[t], np.nan)   # 新建仓参照价 = 成交价
+            else:
+                sell, tp_n, sl_n = pending
+                remaining = (weights > 0) & ~sell
+                freed = float(weights[sell].sum())
+                new_weights = weights.copy()
+                new_weights[sell] = 0.0
+                new_weights[remaining] += freed / int(remaining.sum())   # 均分给剩余持仓
+                traded = np.abs(new_weights - weights).sum()
+                weights = new_weights
+                basis[sell] = np.nan                            # 剩余持仓参照价不重置
+                events[sessions[t]] = (tp_n, sl_n, float(traded))
+            value *= 1.0 - cost_per_side * traded
+            value *= 1.0 + float(weights @ intraday[t])         # 盘中腿走新权重
+            weights = _drift(weights, intraday[t])
+            pending = None
+        elif t > 0:
+            value *= 1.0 + float(weights @ close_to_close[t])
+            weights = _drift(weights, close_to_close[t])
+        nav[t] = value
+
+        # 收盘：这天的收盘价一出就判定下一开盘要不要止盈止损。下一开盘若本就是月度
+        # 成交日（t+1 in trades），整体换仓优先，不必再挂。
+        if (t + 1) not in trades and weights.any():
+            with np.errstate(invalid="ignore"):
+                gain = close_px[t] / basis - 1.0
+            held = weights > 0
+            tp_hit = held & (gain >= take_profit)
+            sl_hit = held & (gain <= -stop_loss)
+            sell = tp_hit | sl_hit
+            # 「平均应用于剩下的股票」要求至少留一只可分配。全部触发是无定义的极端
+            # 边界（实测从不发生），此时不动，等下一个月度调仓。
+            if sell.any() and (held & ~sell).any():
+                pending = (sell, int(tp_hit.sum()), int(sl_hit.sum()))
+
+    return (pd.Series(nav, index=sessions),
+            pd.DataFrame(events, index=["tp", "sl", "turnover"]).T)

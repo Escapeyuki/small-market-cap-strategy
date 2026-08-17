@@ -405,6 +405,65 @@ def figures_27_28(nav, index_close):
     return effect
 
 
+# --------------------------------------------------------------------------- 图31
+
+def figure_31(selection, close, open_, sessions, base_nav, benchmark):
+    """止盈 / 止损增强（研报 4.12 节、图31）。
+
+    研报只给定性结论、不给具体数字，所以这里是 Q14 意义上的**结构性检查**：
+    先验固定 13% / 26%（config.enhance），跑一次，如实报告止盈是否增厚、止损是否
+    如研报所说「很难被触发」。触发后的成交口径、参照价等推断见 bt.run_with_stops。
+    """
+    heading("图31 —— 止盈 / 止损增强（研报 4.12 节：止盈多数时段有效，止损仅 2015 有用）")
+    tp, sl = CFG["enhance"]["take_profit"], CFG["enhance"]["stop_loss"]
+    inf = float("inf")
+    nav_tp, ev_tp = bt.run_with_stops(selection, close, open_, sessions, tp, inf)
+    nav_tpsl, ev_tpsl = bt.run_with_stops(selection, close, open_, sessions, tp, sl)
+
+    base_annual = m.annualized_return(base_nav)
+    tp_annual = m.annualized_return(nav_tp)
+    tpsl_annual = m.annualized_return(nav_tpsl)
+    hits = lambda ev, col: int(ev[col].sum()) if not ev.empty else 0
+    print(f"  {'口径':22s}{'年化':>9s}{'终值':>9s}   触发次数")
+    print(f"  {'无止盈止损（基准）':22s}{base_annual * 100:>8.2f}%{base_nav.iloc[-1]:>9.2f}   —")
+    print(f"  {f'仅止盈 {tp:.0%}':22s}{tp_annual * 100:>8.2f}%{nav_tp.iloc[-1]:>9.2f}   "
+          f"止盈 {hits(ev_tp, 'tp')}")
+    print(f"  {f'止盈 {tp:.0%} + 止损 {sl:.0%}':22s}{tpsl_annual * 100:>8.2f}%"
+          f"{nav_tpsl.iloc[-1]:>9.2f}   止盈 {hits(ev_tpsl, 'tp')} / 止损 {hits(ev_tpsl, 'sl')}")
+
+    print("\n  结构性检查（研报只给定性结论，无具体数字可对）")
+    gap = (tpsl_annual - tp_annual) * 100
+    print(f"  [{'通过' if tp_annual > base_annual else '不符'}] 止盈增厚收益"
+          f"（研报「止盈效果显著」）：{tp_annual * 100:.2f}% > 基准 {base_annual * 100:.2f}%")
+    print(f"  [{'通过' if abs(gap) < 3 else '存疑'}] 止损几乎不改变全时段收益"
+          f"（研报「止损效果一般」）：止盈+止损 vs 仅止盈 差 {gap:+.2f}pp")
+    if not ev_tpsl.empty:
+        sl_years = (ev_tpsl.assign(year=ev_tpsl.index.year)
+                    .groupby("year")["sl"].sum())
+        sl_years = sl_years[sl_years > 0]
+        peak = sl_years.idxmax() if len(sl_years) else None
+        print(f"  [{'通过' if peak == 2015 else '存疑'}] 止损触发集中在 2015"
+              f"（研报「止损仅在 2015 牛熊切换时发挥作用」）：按年 {dict(sl_years)}")
+
+    p.save(
+        p.dual_axis(
+            pd.DataFrame({"小市值100": base_nav, "小市值100 止盈": nav_tp,
+                          "小市值100 止盈+止损": nav_tpsl}),
+            pd.DataFrame({"止盈 相对基准策略": nav_tp / base_nav,
+                          "止盈+止损 相对基准策略": nav_tpsl / base_nav}),
+            "图31 小市值100 组合增强（止盈、止损）",
+            note=f"{SOURCE}。止盈 {tp:.0%} / 止损 {sl:.0%}，T+1 开盘成交、参照建仓价"
+                 f"（grill.md「止盈止损」）。右轴「相对基准」研报未定义口径，本文取"
+                 f"「相对无止盈基准策略」——唯一与研报右轴 0.6-1.6 刻度自洽的口径。",
+            left_label="净值", right_label="相对无止盈策略"),
+        FIGURES / "fig31_take_profit_stop_loss.png",
+    )
+    pd.DataFrame({"baseline": base_nav, "take_profit": nav_tp,
+                 "take_profit_stop_loss": nav_tpsl}).to_csv(OUTPUT / "nav_enhance.csv")
+    if not ev_tpsl.empty:
+        ev_tpsl.to_csv(OUTPUT / "enhance_events.csv")
+
+
 # --------------------------------------------------------------------------- 图6
 
 def figure_6(calendar):
@@ -507,6 +566,7 @@ def main(with_deciles):
     figures_20_to_23(members_by_name, market_cap, sessions)
     figures_24_25(members_by_name, traded, result, sessions)
     figures_27_28(result.nav, index_close)
+    figure_31(selection, close, open_, sessions, result.nav, index_close[BENCH])
 
     if with_deciles:
         figure_6(calendar)

@@ -267,3 +267,62 @@ def test_a_stock_suspended_on_its_entry_day_is_not_bought():
     result = run({0: ["A.XSHE"]}, closes, suspended=halts({1: ["A.XSHE"]}))
     assert result.turnover.iloc[0] == pytest.approx(0.0)          # 没买成
     assert result.nav.iloc[-1] == pytest.approx(1.0)             # 全程空仓持币，连费都没花
+
+
+# --------------------------------------------------------------------------- 止盈 / 止损（图31）
+
+def run_stops(rows, closes, take_profit, stop_loss, opens=None, cost=COST):
+    close, open_ = prices(closes, opens)
+    return bt.run_with_stops(selection(rows), close, open_, SESSIONS,
+                             take_profit, stop_loss, cost_per_side=cost)
+
+
+def test_disabling_both_thresholds_reproduces_the_plain_engine():
+    """两条阈值都设成无穷 = 永不触发，净值必须逐点等于 run()。
+
+    这是止盈止损引擎的地基：关掉它就该精确退回基准，否则叠加层本身在动净值。
+    路径特意带上换股与跳空（成交日拆隔夜/盘中两腿），把一致性考到最严。
+    """
+    closes = [[10, 10], [10, 10], [12, 20], [12, 20], [12, 20], [12, 20]]
+    opens = [[10, 10], [10, 10], [10, 10], [12, 20], [12, 20], [12, 20]]
+    plain = run({0: ["B.XSHE"], 1: ["A.XSHE"]}, closes, opens)
+    nav, events = run_stops({0: ["B.XSHE"], 1: ["A.XSHE"]}, closes,
+                            np.inf, np.inf, opens=opens)
+    assert nav.round(12).tolist() == plain.nav.round(12).tolist()
+    assert events.empty
+
+
+def test_take_profit_sells_the_winner_and_redeploys_into_the_rest():
+    """A 涨破 +13%：T 日收盘判定、T+1 开盘卖出，所得资金转投 B 以保持满仓。"""
+    # 信号0建仓A、B各半@10；day2 A 10→12（+20%）触发止盈；day3 开盘卖A、钱全给B；
+    # day4 A 崩到 1（已不持有，净值不动）；day5 B 10→11（+10%，B 满仓才吃得到）。
+    closes = [[10, 10], [10, 10], [12, 10], [12, 10], [1, 10], [1, 11]]
+    nav, events = run_stops({0: IDS}, closes, 0.13, np.inf)
+
+    assert list(events.index) == [SESSIONS[3]]                   # T+1 开盘才成交
+    assert events.loc[SESSIONS[3], "tp"] == 1 and events.loc[SESSIONS[3], "sl"] == 0
+    # 卖出换手 = 卖A(0.6/1.1) + 买B补到满仓(0.6/1.1) = 1.2/1.1，故 nav3 见下式
+    assert nav.iloc[3] == pytest.approx((1 - COST) * (1.1 - 1.2 * COST))
+    assert nav.iloc[4] == pytest.approx(nav.iloc[3])             # 卖掉的 A 崩盘与组合无关
+    assert nav.iloc[5] == pytest.approx(nav.iloc[4] * 1.1)       # B 已满仓，吃到整个 +10%
+
+
+def test_stop_loss_fires_independently_of_take_profit():
+    """A 跌破 −26%：只有开了止损才卖。止盈线是 +13%，一次下跌不该被它带出。"""
+    closes = [[10, 10], [10, 10], [7, 10], [7, 10], [7, 10], [7, 11]]
+    # 仅止盈：A 一路 −30%，永远够不到 +13% 的止盈线 → 一次都不卖
+    _, only_tp = run_stops({0: IDS}, closes, 0.13, np.inf)
+    assert only_tp.empty
+    # 止盈+止损：day2 gain −30% ≤ −26% → day3 卖 A
+    nav, both = run_stops({0: IDS}, closes, 0.13, 0.26)
+    assert list(both.index) == [SESSIONS[3]]
+    assert both.loc[SESSIONS[3], "sl"] == 1 and both.loc[SESSIONS[3], "tp"] == 0
+    assert nav.iloc[5] == pytest.approx(nav.iloc[3] * 1.1)       # 卖A后满仓B，吃 +10%
+
+
+def test_when_every_holding_triggers_nothing_is_sold():
+    """全部持仓同一天触发 = 没有「剩下的股票」可分配。此边界研报未定义，按不动处理。"""
+    closes = [[10, 10], [10, 10], [12, 12], [12, 12], [12, 12], [12, 12]]
+    nav, events = run_stops({0: IDS}, closes, 0.13, np.inf)   # 两只都 +20% 同时触发
+    assert events.empty                                          # 无处分配 → 不卖
+    assert nav.iloc[-1] == pytest.approx((1 - COST) * 1.2)       # 两只照常持有到底
