@@ -47,6 +47,24 @@ enhance:                     # 图 31
   take_profit: 0.13
   stop_loss: 0.26
 
+# 专题之二《小市值增强策略》(20220623) 专用。口径见 grill_enhance.md E 系列。
+report2:
+  start: 2010-01-01
+  end:   2022-05-31
+  capacity_start: 2019-01-01         # 表22 容量测试
+  capacity_end:   2022-06-30
+  timing_cash_months:   [1, 4]       # 择时空仓月（E9）
+  flagship_cash_months: [1, 4, 6]    # 旗舰再叠加六月
+  min_listed_days_1y:   243          # 上市满1年（交易日口径，E11）
+  registration_cutoff:  2020-08-24   # 创业板注册制 IPO 起点（E10）
+  # 波动率窗口（E4）：先验取 60（≈3个月），实测系统性偏低约 3pp；敏感性发现
+  # 250（≈1年）同时对上低波50(32.7 vs 32.8)与择时低波50(39.7 vs 39.5)——单一窗口
+  # 值满足两个独立目标，故采 250 为操作值。全过程记 grill_enhance.md「实施中的发现」。
+  volatility_window:    250
+  volatility_sweep:     [20, 60, 120, 250]
+  fee_test_cost_per_side: 0.005      # 费用测试 双边千十（E13）
+frequencies2: [monthly, weekly, biweekly, bimonthly, quarterly, monthend]
+
 capacity:                    # 表 2
   initial_capital: [1.0e8, 5.0e8, 1.0e9, 2.0e9, 5.0e9]
   max_participation: 0.05    # 每票每日最多成交当日成交额的 5%
