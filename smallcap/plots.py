@@ -75,9 +75,11 @@ def _finish(ax, title, note=None, percent=False, legend=True):
     return ax.figure
 
 
-def save(fig, path):
+def save(fig, path, dpi=200):
+    """默认 200 DPI 存盘。原先跟随 figure.dpi 落到 100–130，10×5.2 英寸的图只有
+    ~1000px 宽，在高分屏上发虚；200 DPI ≈ 2000px，清晰。所有脚本经此存图。"""
     path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, bbox_inches="tight")
+    fig.savefig(path, bbox_inches="tight", dpi=dpi)
     plt.close(fig)
     return path
 

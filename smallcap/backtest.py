@@ -57,9 +57,24 @@ def rebalance_dates(calendar, freq, start, end):
     sessions = calendar[(calendar >= pd.Timestamp(start)) & (calendar <= pd.Timestamp(end))]
     if freq == "daily":
         return sessions
-    period = {"monthly": "M", "weekly": "W"}[freq]
-    grouped = pd.Series(sessions, index=sessions.to_period(period))
-    return pd.DatetimeIndex(grouped.groupby(level=0).first()).sort_values()
+
+    def firsts(period):
+        g = pd.Series(sessions, index=sessions.to_period(period))
+        return pd.DatetimeIndex(g.groupby(level=0).first()).sort_values()
+
+    if freq in ("monthly", "weekly", "quarterly"):
+        return firsts({"monthly": "M", "weekly": "W", "quarterly": "Q"}[freq])
+    if freq == "biweekly":
+        # 隔周取该周首个交易日，自区间首个调仓周起（专题之二 E12）。
+        return firsts("W")[::2]
+    if freq == "bimonthly":
+        return firsts("M")[::2]
+    if freq == "monthend":
+        # 每月最后一个交易日，研报明示除 12 月与 3 月（p.16 §3.2.1，E12）。
+        g = pd.Series(sessions, index=sessions.to_period("M"))
+        lasts = pd.DatetimeIndex(g.groupby(level=0).last()).sort_values()
+        return lasts[~lasts.month.isin([12, 3])]
+    raise ValueError(f"unknown freq {freq!r}")
 
 
 def trade_dates(signal_dates, sessions):
@@ -110,8 +125,21 @@ def _drift(weights, returns):
 
 
 def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
-        suspended=None):
+        suspended=None, cash_dates=None, limit_down=None):
     """跑一遍净值。
+
+    `limit_down`（可选，日期 × id 布尔宽表，True = 当日**收盘跌停**）—— 专题之二的
+    **跌停惩罚**（grill_enhance.md E7）。调仓时要清仓（target=0）的持仓若当天收盘
+    跌停就卖不掉：冻结持有、标记为 pending，到**首个非收盘跌停日按当日收盘价卖出**，
+    卖出资金**均分给其余持仓**（沿用 run_with_stops 均分约定）。只冻结 sell-side——
+    刚选中却跌停的票照常买得进（跌停有卖盘）。不给 `limit_down` 就是旧口径（跌停股
+    按调仓日冻结价被调出）。它与 `cash_dates` 可叠加（旗舰 = 择时 + 跌停惩罚）。
+
+    `cash_dates`（可选，信号日集合）—— 专题之二的**择时空仓**（grill_enhance.md E9）：
+    这些信号日在其成交日**强制清仓持币**（目标权重全 0，卖光付一次费），净值随后走平
+    到下一个非空仓调仓日。它与「当期选不出票」在语义上不同——后者保持旧仓漂移、
+    跳过调仓，前者主动清仓。若同时给了 `suspended`，停牌持仓卖不掉的部分仍按冻结
+    逻辑保留，其余清成现金（target=0 时 halt 逻辑自然退化为「只留冻结位」）。
 
     `selection` 是布尔宽表（行 = **信号日**），来自 universe.smallest / deciles。
     只有真正被选中过的股票参与计算，其余列直接丢掉。
@@ -131,6 +159,8 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
     overnight, intraday, close_to_close = _legs(close, open_)
     halt = (suspended.reindex(index=sessions, columns=ids).fillna(False).astype(bool).to_numpy()
             if suspended is not None else None)
+    ld = (limit_down.reindex(index=sessions, columns=ids).fillna(False).astype(bool).to_numpy()
+          if limit_down is not None else None)
 
     counts = selection[ids].sum(axis=1)
     targets = selection[ids].div(counts.where(counts > 0), axis=0).fillna(0.0)
@@ -141,23 +171,40 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
     trades = {position[trade]: signal for signal, trade in schedule.items()
               if counts.loc[signal] > 0}
 
+    # 择时空仓（E9）：这些信号日的成交日强制清仓持币，覆盖并标记成 cash。
+    cash_positions = set()
+    if cash_dates is not None:
+        for signal, trade in trade_dates(pd.DatetimeIndex(cash_dates), sessions).items():
+            trades[position[trade]] = signal
+            cash_positions.add(position[trade])
+
     weights = np.zeros(len(ids))
+    pending = np.zeros(len(ids), dtype=bool)       # 跌停惩罚：待释放的冻结调出位（E7）
     value = 1.0
     nav = np.empty(len(sessions))
     recorded = {"weights": {}, "drifted": {}, "turnover": {}, "cost": {}}
 
-    def rebalance(signal_date, trade_date, weights, value, t):
-        target = targets.loc[signal_date].to_numpy()
-        if halt is not None and halt[t].any():
-            # 当天停牌的票买不进也卖不出：停牌位（持仓的 + 刚选中却停牌的空仓位）的
-            # 权重原样冻结，剩下的资金 (1 − 冻结权重) 才按目标铺到能交易的票上。停牌
-            # 持仓由此被持有到复牌，复牌的跳空落在 _legs 里，不在这里按冻结价卖出。
-            frozen = weights * halt[t]
-            buyable = target * ~halt[t]
+    def rebalance(signal_date, trade_date, weights, value, t, to_cash=False):
+        target = np.zeros(len(ids)) if to_cash else targets.loc[signal_date].to_numpy()
+        # 冻结集合：停牌位（买卖两侧，halt）∪ 跌停调出位（仅 sell-side）。停牌的票买不进
+        # 也卖不出；跌停只挡卖出——要清仓（target≈0）的持仓当天收盘跌停就卖不掉，冻结
+        # 持有并标记 pending，等日内释放逻辑到首个非跌停日卖出（E7）。
+        frozen_mask = np.zeros(len(ids), dtype=bool)
+        if halt is not None:
+            frozen_mask |= halt[t]
+        if ld is not None:
+            stuck = (weights > 1e-12) & (target <= 1e-12) & ld[t]
+            frozen_mask |= stuck
+            pending[stuck] = True
+        if frozen_mask.any():
+            frozen = weights * frozen_mask
+            buyable = target * ~frozen_mask
             scale = buyable.sum()
             final = frozen + (buyable / scale * (1.0 - frozen.sum()) if scale > 0 else 0.0)
         else:
             final = target
+        if ld is not None:
+            pending[final <= 1e-12] = False            # 已成功卖出的清掉 pending 标记
         traded = np.abs(final - weights).sum()         # 双边换手率，只算真的动了的部分
         charge = cost_per_side * traded
         recorded["weights"][trade_date] = final
@@ -172,12 +219,28 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
         if t in trades:
             value *= 1.0 + float(weights @ overnight[t])
             weights = _drift(weights, overnight[t])
-            weights, value = rebalance(trades[t], sessions[t], weights, value, t)
+            weights, value = rebalance(trades[t], sessions[t], weights, value, t,
+                                       to_cash=t in cash_positions)
             value *= 1.0 + float(weights @ intraday[t])
             weights = _drift(weights, intraday[t])
         elif t > 0:
             value *= 1.0 + float(weights @ close_to_close[t])
             weights = _drift(weights, close_to_close[t])
+
+        # 收盘释放跌停惩罚的冻结位（E7）：pending 中当天不再收盘跌停的，按今日收盘价
+        # 卖出、均分给其余非 pending 持仓。卖出与买入各计一次单边费。
+        if ld is not None and pending.any():
+            release = pending & ~ld[t] & (weights > 1e-12)
+            if release.any():
+                recipients = (weights > 1e-12) & ~pending
+                freed = float(weights[release].sum())
+                traded = freed + (freed if recipients.any() else 0.0)
+                value *= 1.0 - cost_per_side * traded
+                weights = weights.copy()
+                weights[release] = 0.0
+                if recipients.any():
+                    weights[recipients] += freed / int(recipients.sum())
+                pending[release] = False
         nav[t] = value
 
     order = list(recorded["weights"])
@@ -188,6 +251,68 @@ def run(selection, post_close, post_open, sessions, cost_per_side=COST_PER_SIDE,
         turnover=pd.Series(recorded["turnover"]).reindex(order),
         cost=pd.Series(recorded["cost"]).reindex(order),
     )
+
+
+def run_with_capacity(selection, post_close, turnover_yuan, sessions, initial_capital,
+                      max_participation=0.05, cost_per_side=COST_PER_SIDE, cash_dates=None):
+    """容量测试（研报表22 / p.22 §3.4.2，grill_enhance.md E8）。
+
+    研报原文：「每次最多成交该股票日成交额的 5%」。这里按**金额**记账、逐日**顺延**
+    部分成交：每次调仓设定各票的目标金额（目标权重 × 当时组合总值），此后每个交易日
+    每票最多成交 `max_participation × 当日成交额`（`turnover_yuan` = total_turnover，元），
+    未成交的顺延到下一交易日，直至补齐或下次调仓。资金量越大、目标金额越超过小微盘
+    的 5% 日成交额，越填不满 → 长期欠配持币 → 收益与波动同时下降（表22 的形态）。
+
+    简化（均标注，E8）：①成交按**收盘价**逐日撮合、按收盘价 mark（非主引擎的 T+1 开盘，
+    容量效应是多日的、对开/收微观结构不敏感）；②不含跌停惩罚（E7 实测仅 −0.4pp，
+    相对容量效应可忽略）。`cash_dates` 支持择时空仓（清仓=目标金额全 0）。返回日度净值
+    （起点 1.0，= 组合总值 / 初始资金）。
+    """
+    sessions = pd.DatetimeIndex(sessions)
+    ids = selection.columns[selection.any(axis=0)]
+    close = post_close.reindex(index=sessions, columns=ids)
+    ret = close.pct_change().fillna(0.0).to_numpy()
+    turn = turnover_yuan.reindex(index=sessions, columns=ids).fillna(0.0).to_numpy()
+
+    counts = selection[ids].sum(axis=1)
+    weights = selection[ids].div(counts.where(counts > 0), axis=0).fillna(0.0)
+
+    position = {d: i for i, d in enumerate(sessions)}
+    schedule = trade_dates(selection.index, sessions)
+    trade_at = {position[trade]: signal for signal, trade in schedule.items()
+                if counts.loc[signal] > 0}
+    cash_positions = set()
+    if cash_dates is not None:
+        for signal, trade in trade_dates(pd.DatetimeIndex(cash_dates), sessions).items():
+            trade_at[position[trade]] = signal
+            cash_positions.add(position[trade])
+
+    holdings = np.zeros(len(ids))              # 各票持仓市值（元）
+    cash = float(initial_capital)
+    w = np.zeros(len(ids))                     # 目标权重，调仓日更新、期间不变
+    nav = np.empty(len(sessions))
+
+    for t in range(len(sessions)):
+        holdings *= 1.0 + ret[t]               # 逐日 mark to market
+        total = holdings.sum() + cash
+        if t in trade_at:
+            w = np.zeros(len(ids)) if t in cash_positions else weights.loc[trade_at[t]].to_numpy()
+        # 目标金额按**目标权重 × 当日总值**逐日重算——铺满后 desired≈0，价格漂移不再回撤；
+        # 只在未铺满时继续买。大资金下 w×total 远超 5% 封顶 → 长期欠配（表22 的形态）。
+        target_val = w * total
+        cap = max_participation * turn[t]                       # 各票当日成交额上限（元）
+        fill = np.clip(target_val - holdings, -cap, cap)        # +买 −卖，受 5% 封顶
+        sells = -np.minimum(fill, 0.0)
+        buys = np.maximum(fill, 0.0)
+        budget = cash + sells.sum()                             # 卖出所得可用于买入
+        if buys.sum() > budget and buys.sum() > 0:              # 现金约束：买不超过可用
+            buys *= budget / buys.sum()
+        traded = buys.sum() + sells.sum()
+        holdings += buys - sells
+        cash += sells.sum() - buys.sum() - cost_per_side * traded
+        nav[t] = (holdings.sum() + cash) / initial_capital
+
+    return pd.Series(nav, index=sessions)
 
 
 def run_with_stops(selection, post_close, post_open, sessions,

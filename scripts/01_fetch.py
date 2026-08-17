@@ -28,6 +28,7 @@ BENCH = CFG["backtest"]["benchmark"]
 INDICES = ["000300.XSHG", "000905.XSHG", "000852.XSHG"]     # 沪深300 / 中证500 / 中证1000
 
 REPORT_START, REPORT_END = str(P["report_start"]), str(P["report_end"])
+REPORT2_END = str(CFG["report2"]["end"])                    # 专题之二样本止于 2022-05
 BACK_START = str(P["price_percentile_base"])
 EXT_END = str(P["extension_end"])
 BACK_END = "2012-12-02"
@@ -341,6 +342,28 @@ def harvest():
                 frames.append(snap.reset_index()[["order_book_id", "first_industry_name"]]
                               .assign(date=pd.Timestamp(date)))
         data.write("industry", "annual", pd.concat(frames, ignore_index=True))
+
+    print("[专题之二] limit_down — 跌停惩罚（grill_enhance.md E7）")
+    # 不复权跌停价，全市场，2010-01 起（专题之二样本 2010-2022.5 + E3 预留的 OOS 尾部）。
+    # price_raw* 当初只买了 limit_up，跌停惩罚要对称的 limit_down，单开数据集补齐。
+    data.harvest("limit_down", lambda a, b: rq.get_price(
+        block_ids(a, b), a, b, fields=["limit_down"], adjust_type="none"),
+        "2010-01-01", EXT_END, label="limit_down")
+
+    print("[专题之二] analyst_coverage — 表24 分析师覆盖（grill_enhance.md E14）")
+    # rqdatac 无干净的「覆盖数」字段（E14），用 consensus 目标价存在性作代理：某股某日
+    # 有 one_year_target_price 即视为被分析师覆盖。稀疏，melt 成仅覆盖事件的长表。
+    def coverage_events(a, b):
+        df = rq.get_consensus_price(block_ids(a, b), a, b, fields=["one_year_target_price"])
+        if df is None or len(df) == 0:
+            return pd.DataFrame(columns=["order_book_id", "date", "covered"])
+        df = df.reset_index()
+        df = df[df["one_year_target_price"].notna()]
+        date_col = "date" if "date" in df.columns else df.columns[1]
+        return pd.DataFrame({"order_book_id": df["order_book_id"],
+                             "date": pd.to_datetime(df[date_col]), "covered": True})
+    data.harvest("analyst_coverage", coverage_events, "2010-01-01", REPORT2_END,
+                 label="analyst_coverage")
 
     print(f"\ndone. quota used: {data.quota_used() / 1e6:.0f} MB")
 

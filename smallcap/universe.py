@@ -41,6 +41,7 @@ class Panel:
     volume: pd.DataFrame
     st: pd.DataFrame                # 布尔
     listed_days: pd.DataFrame       # 上市至今的交易日数
+    registration: pd.DataFrame = None   # 注册制布尔（专题之二 E10）；专题之一不设，留 None
 
     @property
     def dates(self):
@@ -95,9 +96,37 @@ def trading(panel):
     return panel.volume > 0
 
 
+# --------------------------------------------------------------------------- 专题之二
+
+def seasoned_1y(panel):
+    """专题之二的次新口径：上市满 1 年（研报 p.6 §1.1「上市满 1 年」）。
+
+    「1 年」研报未说自然日还是交易日；本项目先验取 243 交易日（A 股年均约 243 个
+    交易日，见 grill.md Q16 与 grill_enhance.md E11）。
+    """
+    return seasoned(panel, CFG["report2"]["min_listed_days_1y"])
+
+
+def not_registration(panel):
+    """非注册制（研报 p.6 §1.1「非注册制、非北交所」）。
+
+    研报未给判据，本项目按 board_type + 上市日期推断（grill_enhance.md E10）：
+    科创板（KSH，全部 688）全部为注册制；创业板（GEM）中上市日 ≥ 2020-08-24 者
+    为注册制 IPO。北交所本就不在 rqdatac CS 池，无需另判。`registration` 未设
+    （专题之一口径）时按「全非注册制」放行。
+    """
+    if panel.registration is None:
+        return pd.DataFrame(True, index=panel.dates, columns=panel.ids)
+    return ~panel.registration
+
+
 STANDING = [has_price, not_st, seasoned]
 REBALANCE_DAY = [not_limit_up, trading]
 BUYABLE = STANDING + REBALANCE_DAY
+
+# 专题之二选股范围：上市满 1 年、非 ST、非注册制；调仓日附加非涨停、非停牌。
+STANDING2 = [has_price, not_st, seasoned_1y, not_registration]
+BUYABLE2 = STANDING2 + REBALANCE_DAY
 
 
 def eligible(panel, predicates=BUYABLE):
@@ -124,6 +153,31 @@ def smallest(panel, n, skip=0, predicates=BUYABLE):
     """
     rank = size_rank(panel, eligible(panel, predicates))
     return (rank > skip) & (rank <= skip + n)
+
+
+def cascade(panel, steps, factors=None, predicates=BUYABLE2, mask=None):
+    """逐级筛选选股（专题之二第 3 部分「逐级筛选」，研报 p.7-8 §2）。
+
+    `steps` = [(因子名, ascending, keep_n), ...]，从合格池出发，每级按该因子在**上一级
+    存活者**里排名、保留 keep_n 只，交给下一级。`ascending=True` 取因子值小的
+    （研报表2 注「正向排序取因子值小的」），如市值/波动率/股价的「小/低」。
+
+    因子名 `'cap'` 取 `panel.market_cap`；其余在 `factors` 字典里查（如 `'vol'` →
+    波动率宽表，来自 smallcap.factors.volatility，须已对齐到 panel.dates × panel.ids）。
+
+    低波 50 = `cascade(panel, [('cap', True, 100), ('vol', True, 50)], {'vol': vol})`。
+    单级特例 `cascade(panel, [('cap', True, n)])` 与 `smallest(panel, n)` 等价。
+    """
+    factors = factors or {}
+    base = eligible(panel, predicates)
+    if mask is not None:                                     # 附加约束（如表24 分析师覆盖）
+        base = base & mask.reindex(index=base.index, columns=base.columns).fillna(False)
+    mask = base
+    for name, ascending, keep in steps:
+        frame = panel.market_cap if name == "cap" else factors[name]
+        rank = frame.where(mask).rank(axis=1, ascending=ascending, method="first")
+        mask = mask & rank.le(keep)          # NaN.le(keep) == False，历史不足者自然出局
+    return mask
 
 
 def deciles(panel, n_groups=10, predicates=BUYABLE):
@@ -181,6 +235,18 @@ def panel(dates):
     instruments = data.load("instruments")
     sessions = listed_sessions(dates, instruments, trading_calendar(), ids)
 
+    # 注册制标记（专题之二 E10）：静态、逐股恒定，按 board_type + 上市日期判定后
+    # 广播到每个选股日。科创板（KSH）全注册制；创业板（GEM）上市 ≥ cutoff 者为
+    # 注册制 IPO。专题之一的 BUYABLE 不含 not_registration，这个字段对它无副作用。
+    meta = instruments.drop_duplicates("order_book_id").set_index("order_book_id")
+    board = meta["board_type"].reindex(ids)
+    listed = pd.to_datetime(meta["listed_date"], errors="coerce").reindex(ids)
+    cutoff = pd.Timestamp(CFG["report2"]["registration_cutoff"])
+    is_reg = (board == "KSH") | ((board == "GEM") & (listed >= cutoff))
+    registration = pd.DataFrame(
+        np.repeat(is_reg.to_numpy()[None, :], len(dates), axis=0), index=dates, columns=ids
+    )
+
     return Panel(
         market_cap=market_cap,
         raw_close=align(raw["close"]),
@@ -189,4 +255,5 @@ def panel(dates):
         # 事件表只有 True 行，缺席即非 ST；用 eq(True) 一步补齐并落到 bool。
         st=st.reindex(index=dates, columns=ids).eq(True),
         listed_days=align(sessions, 0).astype(int),
+        registration=registration,
     )

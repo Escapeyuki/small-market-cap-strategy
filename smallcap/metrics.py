@@ -141,6 +141,88 @@ def performance(nav, benchmark_nav, rf=0.02, trading_days=TRADING_DAYS, risk_sta
     )
 
 
+# --------------------------------------------------------------------------- 专题之二指标
+# 研报 p.6 §1.1 定义了三个专题之二专用指标：月度胜率、策略平均分位数、基准平均分位数。
+# 口径歧义按 grill_enhance.md E5/E9 固定：全市场 = 当期有有效收益的全部 A 股；基准分位数
+# 用中证1000 指数自身收益的横截面百分位（非成分股均值，避开 2014 前成分股缺口）；择时
+# 空仓期不计入胜率与分位数（无选股可评）。持有期 = 成交日到下一成交日（T+1 开盘口径）。
+
+def _boundary_returns(series, boundaries):
+    """把一条日度序列在 `boundaries`（成交日）上采样成逐期简单收益，**按期起点标记**。
+
+    第 i 期收益 = series[boundaries[i+1]] / series[boundaries[i]] − 1，标在 boundaries[i]
+    上；最后一个边界没有下一期，为 NaN 后丢弃。
+    """
+    sampled = series.reindex(pd.DatetimeIndex(boundaries))
+    return (sampled.shift(-1) / sampled - 1).iloc[:-1]
+
+
+def win_rate(strat_nav, benchmark_nav, trade_dates, cash_trade_dates=None):
+    """月度/周度胜率：每期策略收益 > 基准收益的比例（研报 p.6）。
+
+    `trade_dates` 是成交日序列（期边界）。`cash_trade_dates` 给出的期起点是择时空仓期，
+    按 E9 从分母剔除——没有选股就无从谈「选股跑赢基准」。
+    """
+    s = _boundary_returns(strat_nav, trade_dates)
+    b = _boundary_returns(benchmark_nav, trade_dates)
+    s, b = s.align(b, join="inner")
+    if cash_trade_dates is not None:
+        s = s[~s.index.isin(pd.DatetimeIndex(cash_trade_dates))]
+        b = b.reindex(s.index)
+    return float((s > b).mean())
+
+
+def _period_stock_returns(post_close, trade_dates):
+    """全市场逐期收益宽表（行 = 期起点成交日，列 = 股票），口径同 `_boundary_returns`。"""
+    px = post_close.reindex(pd.DatetimeIndex(trade_dates))
+    return (px.shift(-1) / px - 1).iloc[:-1]
+
+
+def avg_percentile(selection, post_close, schedule):
+    """策略平均分位数（研报 p.6，E5）：每期**组合等权收益**在全市场股票收益横截面里的
+    百分位，逐（非空仓）期平均。越接近 1.0 越好。
+
+    取「组合收益的百分位」而非「个股百分位均值」，是为了与 `benchmark_percentile`
+    对称——两者都把一个组合/指数的单一收益放进横截面排名。**实测残差**：本口径基准
+    月频 ≈63%，研报 74.14%，系统性偏低约 11pp；个股百分位均值更低（≈50%）。这个缺口
+    是 Wind 分位数方法学与研报文字不足以复原的差异，如实记录（grill_enhance.md E5 /
+    「实施中的发现」），不挑口径去凑。
+
+    `selection` 行 = 信号日；`schedule` = bt.trade_dates(...) 的 signal→trade 映射。
+    空仓期（当期一只都没选）自然被跳过。
+    """
+    schedule = schedule.reindex(selection.index).dropna()
+    period_ret = _period_stock_returns(post_close, pd.DatetimeIndex(schedule.values))
+    vals = []
+    for signal, trade in schedule.items():
+        held = selection.loc[signal]
+        ids = held[held].index
+        if trade in period_ret.index and len(ids):
+            row = period_ret.loc[trade]
+            port = row[row.index.intersection(ids)].mean()
+            cross = row.dropna()
+            if len(cross) and pd.notna(port):
+                vals.append(float((cross < port).mean()))
+    return float(pd.Series(vals, dtype=float).mean())
+
+
+def benchmark_percentile(benchmark_close, post_close, trade_dates):
+    """基准平均分位数（研报 p.6，E5）：中证1000 指数每期收益在全市场股票收益横截面里
+    的百分位，逐期平均。用指数自身收益（单实体），不用成分股均值——避开成分股 2014
+    前缺口，且贴合「基准=指数」的字面。
+    """
+    tds = pd.DatetimeIndex(trade_dates)
+    stock_ret = _period_stock_returns(post_close, tds)
+    bench_ret = _boundary_returns(benchmark_close, tds)
+    vals = []
+    for trade, br in bench_ret.items():
+        if trade in stock_ret.index and pd.notna(br):
+            row = stock_ret.loc[trade].dropna()
+            if len(row):
+                vals.append(float((row < br).mean()))
+    return float(pd.Series(vals, dtype=float).mean())
+
+
 def performance_table(nav, benchmark_nav, rf=0.02, trading_days=TRADING_DAYS):
     """表1 的版式：每个自然年一列，外加「全时段」一列。
 
