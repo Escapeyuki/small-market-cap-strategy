@@ -20,6 +20,10 @@ output/*
 # 是「样本外结论」在仓库里唯一看得见的证据。nav_oos_full.csv 是逐日序列，仍按
 # nav_*.csv 的约定忽略（可离线重算）。
 !output/oos_*.csv
+# 专题之二样本外汇总表（07_enhance_oos.py）：面板(样本内vs样本外)、风险调整、崩盘三视图、
+# 调出归因迁移，同上理由保留；enhance_oos_navs.csv 是逐日序列，按 nav_*.csv 约定忽略。
+!output/enhance_oos_*.csv
+output/enhance_oos_navs.csv
 
 # 分析层：同一条线划在同一个地方。留下的是结论（每张图一行到几十行的汇总）
 # 与图26 的逐笔明细——后者是 Q14 结构性验收「调出归因 97.85/2.15/0.00」的
@@ -41,6 +45,9 @@ output/*
 # 这两行即可，`python scripts/03_analytics.py --deciles` 一分钟重画一套。
 !output/figures/
 !output/figures/*.png
+
+# 本地结果展示页（由 output/ 下 CSV+图生成的自包含 HTML，纯展示，不进 git）
+results.html
 
 # Python
 __pycache__/
