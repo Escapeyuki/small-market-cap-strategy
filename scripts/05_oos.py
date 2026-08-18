@@ -31,7 +31,8 @@ from smallcap.config import CFG, ROOT
 
 B = CFG["backtest"]
 SIZE = CFG["portfolio"]["size"]
-BENCH = B["benchmark"]                 # 000852.XSHG 中证1000
+BENCH = B["benchmark"]                 # 000852.XSHG 中证1000（主基准）
+MICRO = "932000.INDX"                  # 中证2000（样本外副基准，更贴微盘；PROJECT.md 坑位早想要）
 RF = B["rf"]
 
 IS_START = str(CFG["periods"]["report_start"])     # 2012-12-03 研报样本起点
@@ -75,13 +76,15 @@ def run_full():
     close = prices["close"].reindex(sessions)
     open_ = prices["open"].reindex(sessions)
     benchmark = data.wide("index_price", "close", IS_START, FULL_END)[BENCH].reindex(sessions)
+    micro = data.wide("index_csi2000", "close", IS_START, FULL_END)[MICRO].reindex(sessions)  # 副基准
     # 停牌开关：volume == 0 即停牌（grill.md「停牌持仓的处理」），作敏感性口径。
     suspended = (data.series("price_raw", "volume", IS_START, FULL_END).reindex(index=sessions) == 0)
 
     result = bt.run(selection, close, open_, sessions)                               # baseline
     result_hold = bt.run(selection, close, open_, sessions, suspended=suspended)     # 持有停牌
     return dict(calendar=calendar, sessions=sessions, rebalances=rebalances, panel=panel,
-                selection=selection, benchmark=benchmark, nav=result.nav, nav_hold=result_hold.nav)
+                selection=selection, benchmark=benchmark, micro=micro,
+                nav=result.nav, nav_hold=result_hold.nav)
 
 
 def section_overview(ctx):
@@ -123,6 +126,13 @@ def section_metrics(ctx):
             print(f"  {label:16s}{v:>18.3f}{vh:>12.3f}{is_val:>12.2f}")
     print(f"  {'基准中证1000 年化':16s}{perf['基准年化收益率'] * 100:>17.2f}%{'':>12s}{9.7:>11.1f}%")
     print(f"  {'超额年化收益率':16s}{perf['超额年化收益率'] * 100:>+17.2f} {'':>12s}{'+33.3':>12s}")
+
+    # 副基准中证2000（更贴微盘）：只用中证1000 作分母会高估超额纯度（PROJECT.md 坑位）。
+    perf_micro = m.performance(oos_nav, ctx["micro"].loc[CUTOFF:], rf=RF)
+    gap = (perf["超额年化收益率"] - perf_micro["超额年化收益率"]) * 100
+    print(f"  {'基准中证2000 年化':16s}{perf_micro['基准年化收益率'] * 100:>17.2f}%")
+    print(f"  {'超额/中证2000':16s}{perf_micro['超额年化收益率'] * 100:>+17.2f} "
+          f"   （对中证1000 {perf['超额年化收益率']*100:+.1f}；差 {gap:+.1f}pp = 用中证1000 高估的那部分超额纯度）")
     print(f"\n  最大回撤区间 {perf['策略最大回撤起始']:%Y-%m-%d} → {perf['策略最大回撤终止']:%Y-%m-%d}"
           f"（基准 {perf['基准最大回撤起始']:%Y-%m-%d} → {perf['基准最大回撤终止']:%Y-%m-%d}，"
           f"回撤 {perf['基准最大回撤'] * 100:.1f}%）")
@@ -205,6 +215,11 @@ def section_crash(ctx):
           f"（差 {(h24 - b24) * 100:+.1f}pp）—— 对照 2015 那次约 33pp。"
           f"2024 微盘照跌不停牌，两口径几乎不分叉，说明这个 −50% 更贴近真实可实现的损失。")
 
+    # 中证2000（微盘副基准）在两次踩踏窗口：2024 是微盘专属流动性螺旋，它比中证1000 跌得更深。
+    mi24, mi15 = wret(ctx["micro"], "2024-01-02", "2024-02-08"), wret(ctx["micro"], "2015-06-12", "2015-07-08")
+    print(f"  中证2000 对照：2024 窗口 {mi24 * 100:+.1f}%（中证1000 {wret(ctx['benchmark'], '2024-01-02', '2024-02-08') * 100:+.1f}%）、"
+          f"2015 窗口 {mi15 * 100:+.1f}%——微盘副基准 2024 跌得比中证1000 更深，是比中证1000 更贴切的对照。")
+
     # 峰→谷→回本
     def recover(peak_dt, tag, floor):
         seg = nav.loc[peak_dt:]
@@ -276,10 +291,11 @@ def figures(ctx, w24, w15):
     # 图A：样本外净值，2022-03-31 归一
     oos = nav.loc[CUTOFF:] / nav.loc[CUTOFF]
     oob = bench.loc[CUTOFF:] / bench.loc[CUTOFF]
+    oom = ctx["micro"].loc[CUTOFF:] / ctx["micro"].loc[CUTOFF]
     p.save(
-        p.lines(pd.DataFrame({"小市值100": oos, "中证1000": oob}),
+        p.lines(pd.DataFrame({"小市值100": oos, "中证1000": oob, "中证2000": oom}),
                 "样本外净值曲线（2022-04 ~ 2026-08，2022-03-31 = 1.0）", log=True,
-                note="本文复现，数据源 rqdatac。策略延伸至样本外，参数与样本内逐字相同；纵轴对数刻度。",
+                note="本文复现，数据源 rqdatac。参数与样本内逐字相同；纵轴对数刻度。副基准中证2000（回算序列）更贴微盘。",
                 highlight="小市值100", benchmark="中证1000", ylabel="净值（对数刻度，起点 1.0）"),
         FIGURES / "oos_nav.png")
 

@@ -19,7 +19,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from smallcap import backtest as bt, data, factors as fa, metrics as m, universe as u
+from smallcap import backtest as bt, data, enhance as en, factors as fa, metrics as m, universe as u
 from smallcap.config import CFG, ROOT
 
 P2, B = CFG["report2"], CFG["backtest"]
@@ -29,26 +29,9 @@ COST = B["cost_per_side"]
 VOL_W = P2["volatility_window"]
 OUTPUT = ROOT / "output"
 
-# 研报表26 汇总的发布值：[年化, 换手率, 胜率, 策略平均分位数, 基准平均分位数]。
-# 出处逐条见 project_enhance.md 的策略清单。惩罚列见 E6/E7。
-ROSTER = [
-    # 标签,                频率,        逐级 steps,                  空仓月,   惩罚,  研报[ann,turn,win,sp,bp]
-    ("小市值100基准",      "monthly",   [("cap", True, 100)],        (),       False, [26.7, 44.37, 73.83, 74.14, 56.32]),
-    ("小市值50",           "monthly",   [("cap", True, 50)],         (),       False, [33.3, 51.00, 72.48, 73.00, 57.33]),
-    ("小市值低波50",       "monthly",   [("cap", True, 100), ("vol", True, 50)], (), False, [32.8, 53.34, 71.14, 73.51, 57.33]),
-    ("择时小市值100",      "monthly",   [("cap", True, 100)],        (1, 4),   False, [39.2, 62.92, 75.17, 75.11, 56.99]),
-    ("择时小市值50",       "monthly",   [("cap", True, 50)],         (1, 4),   False, [42.1, 66.49, 73.83, 74.61, 57.33]),
-    ("择时低波50",         "monthly",   [("cap", True, 100), ("vol", True, 50)], (1, 4), False, [39.5, 68.79, 72.48, 74.32, 57.67]),
-    ("低波50月末调仓",     "monthend",  [("cap", True, 100), ("vol", True, 50)], (1, 4), False, [37.6, 68.47, 70.95, 73.48, 58.04]),
-    ("跌停惩罚择时100",    "monthly",   [("cap", True, 100)],        (1, 4),   True,  [36.4, 62.95, 74.00, 74.76, 56.98]),
-    ("单周+惩罚择时100",   "weekly",    [("cap", True, 100)],        (1, 4),   True,  [39.0, 27.23, 64.25, 69.98, 61.02]),
-    ("双周+惩罚择时100",   "biweekly",  [("cap", True, 100)],        (1, 4),   True,  [44.3, 40.03, 68.83, 72.46, 59.90]),
-    ("双月+惩罚择时100",   "bimonthly", [("cap", True, 100)],        (1, 4),   True,  [33.6, 54.41, 70.67, 74.21, 59.34]),
-    ("季度+惩罚择时100",   "quarterly", [("cap", True, 100)],        (1, 4),   True,  [32.2, 49.04, 74.00, 74.91, 58.66]),
-    ("★旗舰双周低波50",    "biweekly",  [("cap", True, 100), ("vol", True, 50)], (1, 4, 6), True, [50.9, 47.49, 63.69, 70.91, 60.50]),
-    ("费用测试(千十)",     "biweekly",  [("cap", True, 100), ("vol", True, 50)], (1, 4, 6), True, [44.4, 47.49, 63.69, 70.91, 60.50]),
-    ("保留六月",           "biweekly",  [("cap", True, 100), ("vol", True, 50)], (1, 4),   True,  [48.5, 44.26, 65.23, 71.54, 59.73]),
-]
+# 策略清单 ROSTER（17 策略构造参数 + 研报对照值）与 apply_timing 已移到
+# smallcap/enhance.py，与样本外驱动 07_enhance_oos.py 共用同一份，两个脚本走**同一条
+# 构造路径**（en.run_strategy），避免各写一份走岔（grill.md Q14）。本文用 en.ROSTER。
 
 
 def load_inputs():
@@ -130,30 +113,6 @@ def make_figures(navs, bench, exposures):
     print(f"  图已写入 {figdir.relative_to(ROOT)}/enh_ladder.png, enh_position.png, enh_monthly.png")
 
 
-def apply_timing(sel, sessions, cash_months):
-    """把择时改成**日历月**口径（E9）：Jan/Apr(/Jun) 整月持币，与调仓频率无关。
-
-    简单地「在落入空仓月的调仓日清仓、持到下一次调仓」对粗频率是错的——季度频在
-    1 月初清仓会一直空到 4 月。正解是：每个空仓月的首个交易日清仓，下一个非空仓月
-    的首个交易日按**最近一次原生选股**（ffill）重新建仓；空仓月里的原生调仓日只更新
-    选股、不交易。返回 (增广选股宽表, 清仓信号日)。
-    """
-    sessions = pd.DatetimeIndex(sessions)
-    first = pd.Series(sessions).groupby(sessions.to_period("M")).first()
-    first_days = pd.DatetimeIndex(first.values)
-    is_cash = pd.Series([p.month in cash_months for p in first.index]).reset_index(drop=True)
-    cash_out = first_days[is_cash.values]
-    reentry = first_days[(~is_cash.values) & is_cash.shift(1, fill_value=False).values]
-    native = pd.DatetimeIndex(sel.index)
-    keep = native[~native.month.isin(cash_months)]
-    aug_index = pd.DatetimeIndex(sorted(set(keep) | set(cash_out) | set(reentry)))
-    grid = pd.DatetimeIndex(sorted(set(native) | set(aug_index)))
-    full = sel.astype(float).reindex(grid).ffill()               # ffill 需历史，故先并到 grid
-    aug = full.reindex(aug_index) > 0.5
-    aug.loc[aug.index.isin(cash_out)] = False                    # 空仓月首日清仓
-    return aug, cash_out
-
-
 def main(vol_sweep):
     OUTPUT.mkdir(exist_ok=True)
     cal, sessions, close, open_, full_close, bench, is_ld = load_inputs()
@@ -169,37 +128,24 @@ def main(vol_sweep):
     print(f"\n⚠️ 带惩罚策略系统性高研报约2pp（E7：研报-2.8pp惩罚多是其执行口径，本项目不复制）；")
     print(f"   策略平均分位数系统性低研报约11pp（E5：Wind分位数方法学差异）。年化与胜率对得上。")
 
-    # 频率 → (rebalances, panel, vol) 缓存，避免重复建面板
+    # 频率 → (rebalances, panel, vol) 缓存，避免重复建面板（en.build_freq 持有此 dict）
     cache = {}
-    def build(freq):
-        if freq not in cache:
-            reb = bt.rebalance_dates(cal, freq, START, END)
-            panel = u.panel(reb)
-            vol = fa.volatility(full_close, reb, VOL_W, ids=panel.ids)
-            cache[freq] = (reb, panel, vol)
-        return cache[freq]
 
     def evaluate(freq, steps, cash_months, penalty, cost=COST):
-        reb, panel, vol = build(freq)
-        sel = u.cascade(panel, steps, {"vol": vol}, predicates=u.BUYABLE2)
-        cash = None
-        if cash_months:
-            sel, cash = apply_timing(sel, sessions, cash_months)  # 日历月择时（E9）
-        ld = is_ld if penalty else None
-        res = bt.run(sel, close, open_, sessions, cost_per_side=cost, cash_dates=cash, limit_down=ld)
-        sched = bt.trade_dates(sel.index, sessions)
-        tds = pd.DatetimeIndex(sched.values)
-        cash_td = pd.DatetimeIndex(sched.reindex(cash).dropna().values) if cash is not None else None
-        # sel 已含 cash-out 空行，avg_percentile 自动跳过空仓期（E9）
-        # 仓位暴露 = 引擎实际目标权重之和（日度 ffill）：择时空仓月清仓→和≈0，其余≈1（E9）
-        exposure = res.weights.sum(axis=1).reindex(sessions).ffill().fillna(0.0)
-        return res.nav, dict(
-            ann=m.annualized_return(res.nav) * 100,
-            turn=res.turnover.median() * 100,
-            win=m.win_rate(res.nav, bench, tds, cash_td) * 100,
-            sp=m.avg_percentile(sel, full_close, sched) * 100,
-            bp=m.benchmark_percentile(bench, full_close, tds) * 100,
-        ), exposure
+        # 构造走 en.run_strategy（与样本外 07_enhance_oos.py 同一条路径，Q14）；
+        # 指标在此按**全区间**算——样本外驱动 07 则分样本内/样本外两段各算一遍。
+        s = en.run_strategy(cache, cal, sessions, close, open_, full_close, is_ld,
+                            freq, steps, cash_months, penalty, cost, VOL_W, START, END)
+        nav = s["nav"]
+        # sel 已含 cash-out 空行，avg_percentile 自动跳过空仓期（E9）；
+        # 仓位暴露（exposure）= 引擎实际目标权重之和的日度 ffill：择时空仓月清仓→≈0，其余≈1（E9）
+        return nav, dict(
+            ann=m.annualized_return(nav) * 100,
+            turn=s["res"].turnover.median() * 100,
+            win=m.win_rate(nav, bench, s["tds"], s["cash_td"]) * 100,
+            sp=m.avg_percentile(s["sel"], full_close, s["sched"]) * 100,
+            bp=m.benchmark_percentile(bench, full_close, s["tds"]) * 100,
+        ), s["exposure"]
 
     print("\n" + "=" * 92)
     print("表26 汇总对照 —— 专题之二增强族（本文 vs 研报）    年化/换手/胜率/策略分位/基准分位，单位 %")
@@ -208,7 +154,7 @@ def main(vol_sweep):
     rows = {}
     navs = {}
     exposures = {}
-    for label, freq, steps, cash_months, penalty, ref in ROSTER:
+    for label, freq, steps, cash_months, penalty, ref in en.ROSTER:
         cost = P2["fee_test_cost_per_side"] if "费用" in label else COST
         nav, r, exp = evaluate(freq, steps, cash_months, penalty, cost)
         navs[label] = nav
@@ -224,8 +170,8 @@ def main(vol_sweep):
 
     monthly_distribution(navs["小市值100基准"], bench)
     structural_checks(rows, navs)
-    capacity_test(cal, sessions, full_close, apply_timing)
-    analyst_test(cal, sessions, close, open_, full_close, bench, is_ld, apply_timing)
+    capacity_test(cal, sessions, full_close, en.apply_timing)
+    analyst_test(cal, sessions, close, open_, full_close, bench, is_ld, en.apply_timing)
     make_figures(navs, bench, exposures)
 
     if vol_sweep:
@@ -233,7 +179,7 @@ def main(vol_sweep):
         print("E4 波动率窗口敏感性（月频，低波50 / 择时低波50）")
         print("=" * 60)
         for w in P2["volatility_sweep"]:
-            reb, panel, _ = build("monthly")
+            reb, panel, _ = en.build_freq(cache, cal, "monthly", START, END, full_close, VOL_W)
             vol = fa.volatility(full_close, reb, w, ids=panel.ids)
             lv = u.cascade(panel, [("cap", True, 100), ("vol", True, 50)], {"vol": vol}, predicates=u.BUYABLE2)
             cash = pd.DatetimeIndex([d for d in reb if d.month in (1, 4)])

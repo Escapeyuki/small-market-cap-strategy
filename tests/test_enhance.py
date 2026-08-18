@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from smallcap import backtest as bt, metrics as m, universe as u
+from smallcap import backtest as bt, enhance as en, metrics as m, universe as u
 
 COST = 0.0015
 
@@ -49,6 +49,34 @@ def test_cash_dates_liquidate_to_flat_nav():
     assert nav.iloc[2] < nav.iloc[3]                             # 清仓前 A 涨，净值涨
     assert nav.iloc[4] == pytest.approx(nav.iloc[5])            # 清仓后走平
     assert nav.iloc[5] == pytest.approx(nav.iloc[4])            # 尽管 day5 的 A 仍在涨
+
+
+# ------------------------------------------------------------------- 日历月择时构造
+
+def test_apply_timing_calendar_month_cashout_and_reentry():
+    """apply_timing 日历月口径（E9）—— 接缝里最易错的一处，手算钉死：
+
+    空仓月**首个交易日**清仓；**下一个非空仓月首个交易日**按最近一次原生选股 ffill 再建仓；
+    空仓月内没有原生调仓也照样在下月初再入场（这正是粗频率不能「清仓持到下次调仓」的原因）。
+    """
+    sessions = pd.bdate_range("2019-12-01", "2020-05-31")        # 工作日历（周末剔除）
+    ids = ["A", "B", "C"]
+    # 原生选股只有一/四月两次（模拟季度级稀疏）：一月 {A,B}、四月 {B,C}。
+    sel = pd.DataFrame(False, index=pd.DatetimeIndex(["2020-01-01", "2020-04-01"]), columns=ids)
+    sel.loc["2020-01-01", ["A", "B"]] = True
+    sel.loc["2020-04-01", ["B", "C"]] = True
+
+    aug, cash_out = en.apply_timing(sel, sessions, cash_months=(1,))
+
+    # 清仓信号 = 一月首个交易日（2020-01-01 是周三）
+    assert list(cash_out) == [pd.Timestamp("2020-01-01")]
+    # 增广索引 = {一月首日(清仓), 二月首日(再入场), 四月首日(原生)}——二月即便无原生调仓也再入场
+    assert set(aug.index) == {pd.Timestamp("2020-01-01"), pd.Timestamp("2020-02-03"),
+                              pd.Timestamp("2020-04-01")}
+    assert not aug.loc["2020-01-01"].any()                       # 一月首日清仓：全 False
+    # 二月首日按最近原生（一月 {A,B}）ffill 再建仓——而非空到四月
+    assert set(aug.columns[aug.loc["2020-02-03"]]) == {"A", "B"}
+    assert set(aug.columns[aug.loc["2020-04-01"]]) == {"B", "C"}
 
 
 # --------------------------------------------------------------------------- 跌停惩罚

@@ -365,6 +365,15 @@ def harvest():
     data.harvest("analyst_coverage", coverage_events, "2010-01-01", REPORT2_END,
                  label="analyst_coverage")
 
+    print("[专题之二·OOS] index_csi2000 — 中证2000 样本外副基准（project_enhance.md / grill_enhance.md 样本外）")
+    # 中证2000（932000.INDX）：更贴微盘的样本外副基准。专题之一/二坑位都记「只用中证1000
+    # 会高估超额纯度」。rqdatac 实测数据回溯到 2013-12-31（中证指数公司回算的官方序列——中证2000
+    # 2023-08-11 才正式发布，故 2023-08 前为回算、非实时交易），恰覆盖整个样本外块 2022-06~2026-08。
+    # 单开数据集、不并入 index_price（生命周期不同，且避免撞既有 2 年块的 tag 命名）。
+    # 主基准仍中证1000（000852），保 IS/OOS 可比；中证2000 只作 OOS 副基准。
+    data.harvest("index_csi2000", lambda a, b: rq.get_price(
+        ["932000.INDX"], a, b, fields=["close"]), "2013-01-01", EXT_END, label="index_csi2000")
+
     print(f"\ndone. quota used: {data.quota_used() / 1e6:.0f} MB")
 
 
