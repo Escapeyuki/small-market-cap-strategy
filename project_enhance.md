@@ -62,6 +62,7 @@
 | 6 | 容量模型 `run_with_capacity` + 表22 | ✅（衰减+夏普/波动签名对，绝对偏高）|
 | 7 | 分析师覆盖 + 表24（consensus 代理）| ✅（方向对、幅度过冲，E14 代理稀疏）|
 | 8 | 测试 ✅（200 通过，+13 新）· 图 🟡 · 文档收尾 🟡 | 🟡 |
+| 9 | **样本外（E3 兑现）**：`07_enhance_oos.py` + 中证2000 副基准 | ✅ |
 
 **立场（grilling 敲定）**：Q1=c **严格中立**——只出「本文 vs 研报」表 + 全局口径注，不下判断；
 交付面（README、图）中立，grill_enhance 作内部 log 保留直白事实。Q2′=b 轻报不重装 report_close，
@@ -74,6 +75,12 @@ Q3=a 验收落在年化+胜率+表19/20。
 双周频的放大 + E7 跌停惩罚口径，**头条 50.9% 在可执行口径下不成立**（详见 grill_enhance.md
 「实施中的发现」）。策略平均分位数系统低 ~11pp（Wind 方法学）。
 
+**核心结论（样本外，2022-06~2026-08）**：**裸基准最扛（29.7→29.6），越增强越垮——旗舰
+44.2→18.6**；样本外这段是微盘复苏，择时/低波的防御性叠加拿收益换回撤（旗舰回撤 34% < 裸 48%）。
+**E3 假设部分成立**：择时一月空仓大幅缓冲 2024-01（峰→回本弧 择时低波50 −8.8% vs 不择时
+−36.2%），但机制是「整月持币躲一月」，二月首日再入场照样埋进谷底、非聪明再入场。中证2000
+（样本外 +8.6%）作副基准把超额拉回约 4pp（只用中证1000 会高估纯度）。详见 grill_enhance.md「样本外」。
+
 ---
 
 ## 目录结构（专题之二新增/改动，标 ★）
@@ -85,29 +92,36 @@ Q3=a 验收落在年化+胜率+表19/20。
 ├── config.yaml             + report2 段（区间/择时月/波动窗口/频率）
 ├── smallcap/
 │   ├── factors.py        ★ 波动率等因子（纯计算，从价格派生）
+│   ├── enhance.py        ★ 增强族构造共用：ROSTER + apply_timing + run_strategy（06/07 同一路径）
 │   ├── universe.py         + not_registration 谓词、cascade 多级选股、1年口径
 │   ├── backtest.py         + 多频率、择时空仓(cash_dates)、跌停惩罚、run_with_capacity
 │   └── metrics.py          + win_rate、avg_percentile、benchmark_percentile、专题二版式
 ├── scripts/
-│   ├── 01_fetch.py         + limit_down、consensus 覆盖 两步
-│   └── 06_enhance.py     ★ 专题之二主驱动（镜像 02/03）
+│   ├── 01_fetch.py         + limit_down、consensus 覆盖、index_csi2000（中证2000 副基准）
+│   ├── 06_enhance.py     ★ 专题之二样本内主驱动（镜像 02/03；ROSTER/apply_timing 已提入 enhance.py）
+│   └── 07_enhance_oos.py ★ 专题之二样本外驱动（镜像 05_oos；连续跑+自检/面板/风险/崩盘三视图/迁移）
 ├── tests/
 │   ├── test_factors.py   ★ 波动率窗口手算
 │   └── test_enhance.py   ★ 频率/择时空仓/跌停惩罚/容量顺延，期望值可手算
 ├── data/
 │   ├── limit_down/       ★ 全市场日度跌停价
-│   └── analyst_coverage/ ★ consensus 覆盖布尔
+│   ├── analyst_coverage/ ★ consensus 覆盖布尔
+│   └── index_csi2000/    ★ 中证2000 收盘（932000.INDX，样本外副基准）
 └── output/
     ├── enhance_*.csv     ★ 表26 汇总、表19/20、容量、敏感性
-    └── figures/enh_*.png ★ enh_ladder 增强阶梯净值、enh_position 择时仓位暴露、enh_monthly 月度分布（均 200 DPI）
+    ├── enhance_oos_*.csv ★ 样本外：panel（样本内vs外）、ladder_risk、crash 三视图、migration、navs
+    └── figures/enh_*.png ★ enh_ladder/position/monthly（样本内）· enh_oos_ladder/crash（样本外，均 200 DPI）
 ```
 
 ---
 
-## 现有程序做什么（待建，建成后填实测行为）
+## 现有程序做什么
 
 - **`smallcap/factors.py`** — 波动率 = 过去 60 交易日日收益率 std（E4），从 `price_post`
   close 派生；敏感性支持 {20,60,120}。
+- **`smallcap/enhance.py`** — 增强族构造的共用层：`ROSTER`（15 策略构造参数 + 研报对照值）、
+  `apply_timing`（日历月择时 E9）、`build_freq`/`run_strategy`（按频率缓存面板、构造单策略跑净值，
+  返回原始积木不算指标）。**06 样本内与 07 样本外走同一条 `run_strategy`**——样本外只改区间（Q14）。
 - **`smallcap/universe.py`（扩展）** — `not_registration`（board_type=KSH 全排、GEM 且
   上市≥2020-08-24 排，E10）；`cascade(steps)` 泛化 `smallest`，逐级按因子筛选
   （低波50 = cap↑100→vol↑50）；1 年口径走 config。
@@ -117,7 +131,10 @@ Q3=a 验收落在年化+胜率+表19/20。
 - **`smallcap/metrics.py`（扩展）** — `win_rate`（排除空仓期，E9）、`avg_percentile`（全市场
   百分位，E5）、`benchmark_percentile`（指数收益百分位，E5）、专题二 5 列版式。
 - **`scripts/06_enhance.py`** — 先打印先验假设，逐条构造 17 策略与研报并排、打结构性检查，
-  出表19/20、容量表22、分析师表24，写 CSV + 图。全程离线。
+  出表19/20、容量表22、分析师表24，写 CSV + 图。全程离线。构造已提入 `enhance.py`。
+- **`scripts/07_enhance_oos.py`** — 样本外驱动，把 15 策略参数逐字不变延到 2026-08（只改区间，
+  走 `enhance.run_strategy`）。五节：①连续跑+样本内切片自检 ②样本外块「样本内vs外」5指标面板
+  ③ladder-6 风险调整+中证2000 纯度 ④2024-01 崩盘三视图（E3 假设检验）⑤调出归因迁移。全程离线。
 
 ---
 
@@ -127,6 +144,7 @@ Q3=a 验收落在年化+胜率+表19/20。
 |---|---|---|
 | `limit_down` | 全市场日度不复权跌停价 | 跌停惩罚（表14–26）|
 | `analyst_coverage` | consensus 估计存在性（布尔，E14 代理）| 表24 |
+| `index_csi2000` | 中证2000 收盘（`932000.INDX`，回算自 2013-12-31）| 样本外副基准（07 / 05_oos）|
 
 其余全部本地已有（`grill_enhance.md` 硬约束）。**波动率**从 `price_post` 派生、**成交额**用
 `total_turnover`（2019+）、**非注册制**用 `instruments.board_type`+`listed_date`。
@@ -155,9 +173,13 @@ Q3=a 验收落在年化+胜率+表19/20。
 - [ ] 图：增强阶梯 / 月度热力 / 择时分解 / 波动敏感
 - [ ] 文档：grill_enhance「实施中的发现」+ 本文进度 + README 专题二段
 
-### 已标注的后续（本轮不做，E3）
-- [ ] **一月空仓 vs 2024-01 微盘踩踏** —— 旗舰每年一月本就空仓，可能躲过击穿裸策略的
-      那场踩踏。数据/引擎已达 2026，一条命令的 OOS 后续。
+### 样本外（E3 兑现）—— ✅ 已完成（`07_enhance_oos.py`，详见 grill_enhance.md「样本外」）
+- [x] **一月空仓 vs 2024-01 微盘踩踏** —— E3 假设**部分成立**：择时一月空仓缓冲踩踏（峰→回本弧
+      择时低波50 −8.8% vs 不择时 −36.2%），但二月首日再入场埋进谷底；净缓冲全来自一月持币
+- [x] 全 15 策略「样本内 vs 样本外」面板 → **裸基准 29.7→29.6 最扛，旗舰 44.2→18.6 越增强越垮**
+      （防御性叠加在样本外复苏里拿收益换回撤，旗舰回撤 34% < 裸 48%）
+- [x] 中证2000 副基准补抓（`index_csi2000`）→ 07 与 05_oos，量化超额纯度（用中证1000 高估约 4pp）
+- [ ] 待补（可选）：容量模型样本外拥挤度、视觉对齐的样本外月度分布图
 
 ---
 
@@ -169,3 +191,9 @@ Q3=a 验收落在年化+胜率+表19/20。
   `grill_enhance.md`「研报的问题」，按纪律如实标注、不替它圆场。
 - **`limit_down` 之前从未抓过**（`price_raw*` 只有 `limit_up`）——跌停惩罚全靠它。
 - **consensus 覆盖历史可能浅**——表24 若早年几乎无覆盖，如实报告缺口。
+- **样本外越"增强"越垮，不是 bug**：裸基准 29.7→29.6，旗舰 44.2→18.6。样本外这段是微盘复苏，
+  择时/低波是防御性叠加，拿收益换回撤（旗舰回撤 34% < 裸 48%）。见 grill_enhance.md「样本外」。
+- **中证2000（`932000.INDX`）rqdatac 回算到 2013-12-31**，非 2023-08 发布日；2023-08 前是中证
+  指数公司回算序列（非实时），但恰覆盖整个样本外块，作副基准正合适。万得微盘 rqdatac 取不到。
+- **07 与 06 必须走同一条构造路径**（`smallcap/enhance.py` 的 `run_strategy`）：样本外只准改区间
+  （Q14），共用构造是「样本内外逐字一致」的保证；样本内切片自检（复现 06 的 29.7/44.2）是守门人。
